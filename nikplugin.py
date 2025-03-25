@@ -21,7 +21,8 @@ from gi.repository import (
     GimpUi,
 )
 
-from typing import Any, List, Tuple
+from pathlib import Path
+from typing import Any, List, Optional, Tuple, Union
 
 import os
 import shlex
@@ -39,61 +40,44 @@ COPYRIGHT = "GNU General Public License v3"
 DATE = "2025-03-25"
 
 
-def listcommands(option=None):
+def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path, str]]:
+    """
+    Build a list of Nik programs installed on the system
 
-    # Insert additional shell command into this list. They will show up in the drop menu in this order.
-    # Use the syntax:
-    # ["Menu Label", "command", "ext"]
-    #
-    # Where what gets executed is command filename, so include any flags needed in the command.
-    programlist = [
-        [
-            "DFine 2",
-            '"C:\\Program Files\\Google\\Nik Collection\\Dfine 2\\Dfine2.exe"',
-            "png",
-        ],
-        [
-            "Sharpener Pro 3",
-            '"C:\\Program Files\\Google\\Nik Collection\\Sharpener Pro 3\\SHP3OS.exe"',
-            "png",
-        ],
-        [
-            "Viveza 2",
-            '"C:\\Program Files\\Google\\Nik Collection\\Viveza 2\\Viveza 2.exe"',
-            "png",
-        ],
-        [
-            "Color Efex Pro 4",
-            '"C:\\Program Files\\Google\\Nik Collection\\Color Efex Pro 4\\Color Efex Pro 4.exe"',
-            "jpg",
-        ],
-        [
-            "Analog Efex Pro 2",
-            '"C:\\Program Files\\Google\\Nik Collection\\Analog Efex Pro 2\\Analog Efex Pro 2.exe"',
-            "jpg",
-        ],
-        [
-            "HDR Efex Pro 2",
-            '"C:\\Program Files\\Google\\Nik Collection\\HDR Efex Pro 2\\HDR Efex Pro 2.exe"',
-            "jpg",
-        ],
-        [
-            "Silver Efex Pro 2",
-            '"C:\\Program Files\\Google\\Nik Collection\\Silver Efex Pro 2\\Silver Efex Pro 2.exe"',
-            "jpg",
-        ],
-        ["", "", ""],
+    Args:
+        idx: Optional index of the program to return details for
+
+    Returns:
+        If idx is None, returns a list of program names
+        Otherwise, returns [prog_name, prog_filepath, output_ext] for the specified program
+    """
+
+    # NOTE: Update this base path to match your installation
+    # Assume all nik programs are installed in the same base directory
+    install_path = Path("C:/Program Files/Google/Nik Collection")
+
+    # Define program details as: (program_name, executable_filename, file_extension)
+    progs_info = [
+        ("Analog Efex Pro 2", "Analog Efex Pro 2.exe", "jpg"),
+        ("Color Efex Pro 4", "Color Efex Pro 4.exe", "jpg"),
+        ("DFine 2", "Dfine2.exe", "png"),
+        ("HDR Efex Pro 2", "HDR Efex Pro 2.exe", "jpg"),
+        ("Sharpener Pro 3", "SHP3OS.exe", "png"),
+        ("Silver Efex Pro 2", "Silver Efex Pro 2.exe", "jpg"),
+        ("Viveza 2", "Viveza 2.exe", "png"),
     ]
 
-    if option is None:
-        menulist = []
-        for i in programlist:
-            if i[0] != "":
-                menulist.append(i[0])
-        return menulist
-    else:
-        return programlist[option]
+    # Build the list of existing programs
+    progs_lst = []
+    for prog, exe, ext in progs_info:
+        fullpath = install_path / prog / exe
+        if fullpath.exists():
+            progs_lst.append((prog, fullpath, ext))
 
+    if idx is None:
+        return [prog[0] for prog in progs_lst]
+    else:
+        return progs_lst[idx]
 
 
 def plugin_main(
@@ -183,7 +167,7 @@ def plugin_main(
     tempdrawable = Gimp.Image.get_active_layer(tempimage)
 
     # Get the program to run and filetype
-    progtorun = listcommands(command_idx)
+    progtorun = list_progs(command_idx)
 
     # Use temp file names from gimp, it reflects the user's choices in gimp.rc
     # change as indicated if you always want to use the same temp file name
@@ -303,7 +287,7 @@ class NikPlugin(Gimp.PlugIn):
 
         # Dropdown selection list of programs
         command_choice = Gimp.Choice.new()
-        programs = listcommands()
+        programs = list_progs()
         for idx, prog in enumerate(programs):
             command_choice.add(prog, idx, prog, prog)
         procedure.add_choice_argument(
