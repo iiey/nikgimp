@@ -21,6 +21,8 @@ from gi.repository import (
     GimpUi,
 )
 
+from typing import Any, List, Tuple
+
 import os
 import shlex
 import subprocess
@@ -93,7 +95,30 @@ def listcommands(option=None):
         return programlist[option]
 
 
-def plugin_main(procedure, run_mode, image, drawables, config, data):
+
+def plugin_main(
+    procedure: Gimp.Procedure,
+    run_mode: Gimp.RunMode,
+    image: Gimp.Image,
+    drawables: List[Gimp.Drawable],
+    config: Gimp.ProcedureConfig,
+    data: Any,
+) -> Gimp.ValueArray:
+    """
+    Main function executed by the plugin. Call an external Nik Collection program on the active layer
+    It supports two modes:
+      - When visible == 0, operates on the active drawable (current layer).
+      - When visible != 0, creates a new layer from the composite of all visible layers
+
+    Workflow:
+      - Show dialog in interactive mode for setting parameters (layer source and external program)
+      - Start an undo group (let user undo all operations as a single step)
+      - Copy and save the layer to a temporary file based on the "visible" setting
+      - Call the chosen external Nik Collection program
+      - Load the modified result as a new layer and paste it
+      - Restore any saved selection and clean up temporary resources
+      - End the undo group and finalize
+    """
 
     # Show dialog in interactive mode
     if run_mode == Gimp.RunMode.INTERACTIVE:
