@@ -19,6 +19,7 @@ from gi.repository import (
     Gegl,
     Gimp,
     GimpUi,
+    Gio,
 )
 
 from pathlib import Path
@@ -117,7 +118,10 @@ def plugin_main(
 
     # Get parameters
     visible = config.get_property("visible")
-    command_idx = config.get_property("command")
+    prog_idx = int(config.get_property("command"))
+
+    # Get the program to run and filetype
+    prog_to_run = list_progs(prog_idx)
 
     # Check if drawables is empty
     if not drawables or len(drawables) == 0:
@@ -139,10 +143,10 @@ def plugin_main(
         temp = drawable
     else:
         # Get the current visible
-        temp = Gimp.Layer.new_from_visible(image, image, "Visible")
+        temp = Gimp.Layer.new_from_visible(image, image, prog_to_run[0])
         image.insert_layer(temp, None, 0)
 
-    # Copy the layer content
+    # Copy the layer content into the named buffer
     buffer = Gimp.edit_named_copy([temp], "ShellOutTemp")
 
     # Save selection if one exists
@@ -151,9 +155,8 @@ def plugin_main(
         savedsel = Gimp.Selection.save(image)
 
     # Create a new image with the copied content
-    tempimage = Gimp.edit_named_paste_as_new_image(buffer)
-    Gimp.Buffer.delete(buffer)
-    if not tempimage:
+    tmp_img = Gimp.edit_named_paste_as_new_image(buffer)
+    if not tmp_img:
         image.undo_group_end()
         Gimp.context_pop()
         return procedure.new_return_values(
@@ -161,61 +164,45 @@ def plugin_main(
             GLib.Error(),
         )
 
-    Gimp.Image.undo_disable(tempimage)
+    Gimp.Image.undo_disable(tmp_img)
 
     # Get the active layer from the temp image
-    tempdrawable = Gimp.Image.get_active_layer(tempimage)
-
-    # Get the program to run and filetype
-    progtorun = list_progs(command_idx)
+    tempdrawable = tmp_img.get_selected_drawables()[0]
 
     # Use temp file names from gimp, it reflects the user's choices in gimp.rc
     # change as indicated if you always want to use the same temp file name
     # tempfilename = pdb.gimp_temp_name(progtorun[2])
     tempfilename = os.path.join(
-        tempfile.gettempdir(), "ShellOutTempFile." + progtorun[2]
+        tempfile.gettempdir(), "ShellOutTempFile." + prog_to_run[2]
     )
 
     # !!! Note no run-mode first parameter, and user entered filename is empty string
     Gimp.progress_init("Saving a copy")
     Gimp.file_save(
-        Gimp.RunMode.NONINTERACTIVE,
-        tempimage,
-        tempdrawable,
-        GLib.file_new_for_path(tempfilename),
+        run_mode=Gimp.RunMode.NONINTERACTIVE,
+        image=tmp_img,
+        file=Gio.File.new_for_path(tempfilename),
+        options=None,
     )
 
-    # Build command line call
-    command = progtorun[1] + ' "' + tempfilename + '"'
-    args = shlex.split(command)
-
     # Invoke external command
-    Gimp.progress_init("Calling " + progtorun[0] + "...")
+    Gimp.progress_init("Calling " + prog_to_run[0] + "...")
     Gimp.progress_pulse()
-    child = subprocess.Popen(args, shell=False)
-    child.communicate()
+    cmd = [str(prog_to_run[1]), str(tempfilename)]
+    subprocess.Popen(cmd, shell=False).communicate()
 
     # Put it as a new layer in the opened image
-    try:
-        newlayer2 = Gimp.file_load_layer(
-            Gimp.RunMode.NONINTERACTIVE,
-            tempimage,
-            GLib.file_new_for_path(tempfilename),
-        )
-    except Exception as e:
-        print(f"Error loading file: {e}")
-        image.undo_group_end()
-        Gimp.context_pop()
-        return procedure.new_return_values(
-            Gimp.PDBStatusType.EXECUTION_ERROR,
-            GLib.Error(),
-        )
+    newlayer2 = Gimp.file_load_layer(
+        run_mode=Gimp.RunMode.NONINTERACTIVE,
+        image=tmp_img,
+        file=Gio.File.new_for_path(tempfilename),
+    )
 
-    tempimage.insert_layer(newlayer2, None, -1)
+    tmp_img.insert_layer(newlayer2, None, -1)
     buffer = Gimp.edit_named_copy([newlayer2], "ShellOutTemp")
 
     if visible == 0:
-        Gimp.Item.resize(drawable, newlayer2.get_width(), newlayer2.get_height(), 0, 0)
+        drawable.resize(newlayer2.get_width(), newlayer2.get_height(), 0, 0)
         sel = Gimp.edit_named_paste(drawable, buffer, True)
         Gimp.Item.transform_translate(
             drawable,
@@ -223,7 +210,7 @@ def plugin_main(
             (tempdrawable.get_height() - newlayer2.get_height()) / 2,
         )
     else:
-        Gimp.Item.resize(temp, newlayer2.get_width(), newlayer2.get_height(), 0, 0)
+        temp.resize(newlayer2.get_width(), newlayer2.get_height(), 0, 0)
         sel = Gimp.edit_named_paste(temp, buffer, True)
         Gimp.Item.transform_translate(
             temp,
@@ -231,8 +218,8 @@ def plugin_main(
             (tempdrawable.get_height() - newlayer2.get_height()) / 2,
         )
 
-    Gimp.Buffer.delete(buffer)
-    Gimp.edit_clear([temp])
+    temp.edit_clear()
+    Gimp.buffer_delete(buffer)
     Gimp.floating_sel_anchor(sel)
 
     # Load up old selection
@@ -240,9 +227,9 @@ def plugin_main(
         Gimp.Selection.load(savedsel)
         image.remove_channel(savedsel)
 
-    # Cleanup
-    os.remove(tempfilename)  # delete the temporary file
-    tempimage.delete()  # delete the temporary image
+    # Cleanup temporary file & image
+    os.remove(tempfilename)
+    tmp_img.delete()
 
     # End the undo group
     image.undo_group_end()
@@ -275,13 +262,13 @@ class NikPlugin(Gimp.PlugIn):
         # Replace PF_RADIO choice
         visible_choice = Gimp.Choice.new()
         visible_choice.add("new_from_visible", 1, "new from visible", "new layer")
-        visible_choice.add("current_layer", 0, "use current layer", "current layer")
+        visible_choice.add("use_current_layer", 0, "use current layer", "current layer")
         procedure.add_choice_argument(
             "visible",
             "Layer:",
             "Choose layer source",
             visible_choice,
-            "new_from_visible",
+            "use_current_layer",
             GObject.ParamFlags.READWRITE,
         )
 
@@ -289,13 +276,14 @@ class NikPlugin(Gimp.PlugIn):
         command_choice = Gimp.Choice.new()
         programs = list_progs()
         for idx, prog in enumerate(programs):
-            command_choice.add(prog, idx, prog, prog)
+            # the get_property(choice_name) will return 'nick' not 'id' so str(id) to get the index later
+            command_choice.add(str(idx), idx, prog, prog)
         procedure.add_choice_argument(
             "command",
             "Program:",
             "Select external program to run",
             command_choice,
-            programs[0],
+            str(idx),
             GObject.ParamFlags.READWRITE,
         )
         return procedure
