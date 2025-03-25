@@ -36,7 +36,6 @@ from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
 
 import os
-import shlex
 import subprocess
 import sys
 import tempfile
@@ -90,6 +89,46 @@ def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path, s
         return progs_lst[idx]
 
 
+def run_nik(prog_idx: int, gimp_img: Gimp.Image) -> Optional[str]:
+
+    prog_name, prog_filepath, img_ext = list_progs(prog_idx)
+    img_path = os.path.join(tempfile.gettempdir(), f"TmpNik.{img_ext}")
+
+    # Save gimp image to disk
+    Gimp.progress_init("Saving a copy")
+    Gimp.file_save(
+        run_mode=Gimp.RunMode.NONINTERACTIVE,
+        image=gimp_img,
+        file=Gio.File.new_for_path(img_path),
+        options=None,
+    )
+
+    # Invoke external command
+    time_before = os.path.getmtime(img_path)
+    Gimp.progress_init(f"Calling {prog_name}...")
+    Gimp.progress_pulse()
+    cmd = [str(prog_filepath), img_path]
+    subprocess.check_call(cmd)
+    time_after = os.path.getmtime(img_path)
+
+    return None if time_before == time_after else img_path
+
+
+def show_alert(text: str, message: str, parent=None) -> None:
+
+    dialog = Gtk.MessageDialog(
+        transient_for=parent,
+        flags=0,
+        message_type=Gtk.MessageType.ERROR,
+        buttons=Gtk.ButtonsType.CLOSE,
+        text=text,
+    )
+    dialog.format_secondary_text(message)
+    dialog.set_title(f"{PROC_NAME} v{VERSION} - Error")
+    dialog.run()
+    dialog.destroy()
+
+
 def plugin_main(
     procedure: Gimp.Procedure,
     run_mode: Gimp.RunMode,
@@ -130,10 +169,6 @@ def plugin_main(
         visible = config.get_property("visible")
         prog_idx = int(config.get_property("command"))
 
-        # Get the program to run and filetype
-        prog_name, prog_filepath, img_ext = list_progs(prog_idx)
-        active_layer: Gimp.Layer = image.get_layers()[0]
-
         # Start an undo group
         Gimp.context_push()
         image.undo_group_start()
@@ -143,10 +178,12 @@ def plugin_main(
             Gimp.Selection.none(image)
 
         # Prepare the layer to be processed
+        active_layer: Gimp.Layer = image.get_layers()[0]
         if visible == LayerSource.CURRENT_LAYER:
             target_layer = active_layer
         else:
             # prepare a new layer in 'image' from all the visibles
+            prog_name: str = list_progs(prog_idx)[0]
             target_layer = Gimp.Layer.new_from_visible(image, image, prog_name)
             image.insert_layer(target_layer, None, 0)
 
@@ -157,21 +194,18 @@ def plugin_main(
             raise Exception("Failed to create temporary image from buffer")
 
         Gimp.Image.undo_disable(tmp_img)
-        tmp_filepath = os.path.join(tempfile.gettempdir(), f"TmpNik.{img_ext}")
 
-        Gimp.progress_init("Saving a copy")
-        Gimp.file_save(
-            run_mode=Gimp.RunMode.NONINTERACTIVE,
-            image=tmp_img,
-            file=Gio.File.new_for_path(tmp_filepath),
-            options=None,
-        )
+        # Execute external program
+        tmp_filepath = run_nik(prog_idx, tmp_img)
+        if tmp_filepath is None:
+            if visible == LayerSource.FROM_VISIBLES:
+                image.remove_layer(target_layer)
 
-        # Invoke external command
-        Gimp.progress_init("Calling " + prog_name + "...")
-        Gimp.progress_pulse()
-        cmd = [str(prog_filepath), str(tmp_filepath)]
-        subprocess.Popen(cmd, shell=False).communicate()
+            tmp_img.delete()
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.SUCCESS,
+                GLib.Error(message="No changes detected"),
+            )
 
         # Put it as a new layer in the opened image
         filtered: Gimp.Layer = Gimp.file_load_layer(
@@ -201,6 +235,7 @@ def plugin_main(
         os.remove(tmp_filepath)
         tmp_img.delete()
 
+        return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
     except Exception as e:
         show_alert(text=str(e), message=traceback.format_exc())
         return procedure.new_return_values(
@@ -211,24 +246,6 @@ def plugin_main(
         image.undo_group_end()
         Gimp.context_pop()
         Gimp.displays_flush()
-
-    return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
-
-
-def show_alert(text: str, message: str, parent=None) -> None:
-    """Create a popup dialog to show an error message"""
-
-    dialog = Gtk.MessageDialog(
-        transient_for=parent,
-        flags=0,
-        message_type=Gtk.MessageType.ERROR,
-        buttons=Gtk.ButtonsType.CLOSE,
-        text=text,
-    )
-    dialog.format_secondary_text(message)
-    dialog.set_title(f"{PROC_NAME} v{VERSION} - Error")
-    dialog.run()
-    dialog.destroy()
 
 
 class LayerSource(str, Enum):
