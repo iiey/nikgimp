@@ -33,6 +33,9 @@ import sys
 import tempfile
 import traceback
 
+# NOTE: Update this base path to match your installation
+NIK_BASE_PATH = Path("C:/Program Files/Google/Nik Collection")
+
 # Define plug-in metadata
 PROC_NAME = "NikCollection"
 HELP = "Call an external program"
@@ -54,10 +57,7 @@ def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path, s
         Otherwise, returns [prog_name, prog_filepath, output_ext] for the specified program
     """
 
-    # NOTE: Update this base path to match your installation
     # Assume all nik programs are installed in the same base directory
-    install_path = Path("C:/Program Files/Google/Nik Collection")
-
     # Define program details as: (program_name, executable_filename, file_extension)
     progs_info = [
         ("Analog Efex Pro 2", "Analog Efex Pro 2.exe", "jpg"),
@@ -72,7 +72,7 @@ def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path, s
     # Build the list of existing programs
     progs_lst = []
     for prog, exe, ext in progs_info:
-        fullpath = install_path / prog / exe
+        fullpath = NIK_BASE_PATH / prog / exe
         if fullpath.exists():
             progs_lst.append((prog, fullpath, ext))
 
