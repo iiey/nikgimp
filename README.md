@@ -16,7 +16,7 @@ A Python GIMP plugin for processing images using **external** Nik Collection pro
     ```sh
     GIMP_INSTALLATION_PATH/lib/gimp/3.0/plug-ins/nikplugin/nikplugin.py
     ```
-3. Open the script and adapt the *Nik Collection installation path* to match your system configuration
+3. Open the script and adapt the software installation path `NIK_BASE_PATH` to match your system configuration
 4. (Re)start GIMP, the plugin should appear under the menu `Filters > NikCollection`
 
 ## Usage

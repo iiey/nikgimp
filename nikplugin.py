@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
 
 """
-Version:
+VERSION:
 3.0 Make plugin compatible with Gimp 3.x
     - Revise the code using v3.x API
     - Refactor code and format with black
+previous versions: see gimp2x/shellout.py
+
+LICENSE:
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+This program is licensed under the GNU General Public License v3 (GPLv3).
+
+CONTRIBUTING:
+For updates, raising issues and contributing, visit <https://github.com/iiey/nikGimp>.
 """
 
 import gi
