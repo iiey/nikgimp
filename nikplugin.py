@@ -114,7 +114,10 @@ def plugin_main(
         dialog.fill(None)
         if not dialog.run():
             dialog.destroy()
-            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL,
+                GLib.Error(message="No dialog response"),
+            )
         dialog.destroy()
 
     # Get parameters
@@ -122,7 +125,7 @@ def plugin_main(
     prog_idx = int(config.get_property("command"))
 
     # Get the program to run and filetype
-    prog_to_run = list_progs(prog_idx)
+    prog_name, prog_filepath, img_ext = list_progs(prog_idx)
 
     # Check if drawables is empty
     if not drawables or len(drawables) == 0:
@@ -132,7 +135,7 @@ def plugin_main(
                 Gimp.PlugIn.error_quark(), "No drawable provided", 0
             ),
         )
-    drawable = drawables[0]
+    drawable: Gimp.Drawable = drawables[0]
 
     # Start an undo group
     Gimp.context_push()
@@ -144,11 +147,11 @@ def plugin_main(
         temp = drawable
     else:
         # Get the current visible
-        temp = Gimp.Layer.new_from_visible(image, image, prog_to_run[0])
+        temp = Gimp.Layer.new_from_visible(image, image, prog_name)
         image.insert_layer(temp, None, 0)
 
     # Copy the layer content into the named buffer
-    buffer = Gimp.edit_named_copy([temp], "ShellOutTemp")
+    buffer: str = Gimp.edit_named_copy([temp], "ShellOutTemp")
 
     # Save selection if one exists
     hassel = not Gimp.Selection.is_empty(image)
@@ -156,67 +159,63 @@ def plugin_main(
         savedsel = Gimp.Selection.save(image)
 
     # Create a new image with the copied content
-    tmp_img = Gimp.edit_named_paste_as_new_image(buffer)
+    tmp_img: Gimp.Image = Gimp.edit_named_paste_as_new_image(buffer)
     if not tmp_img:
         image.undo_group_end()
         Gimp.context_pop()
         return procedure.new_return_values(
             Gimp.PDBStatusType.EXECUTION_ERROR,
-            GLib.Error(),
+            GLib.Error(message="Failed to create temporary image form buffer"),
         )
 
     Gimp.Image.undo_disable(tmp_img)
 
     # Get the active layer from the temp image
-    tempdrawable = tmp_img.get_selected_drawables()[0]
+    tmp_drawable: Gimp.Drawable = tmp_img.get_selected_drawables()[0]
 
     # Use temp file names from gimp, it reflects the user's choices in gimp.rc
     # change as indicated if you always want to use the same temp file name
-    # tempfilename = pdb.gimp_temp_name(progtorun[2])
-    tempfilename = os.path.join(
-        tempfile.gettempdir(), "ShellOutTempFile." + prog_to_run[2]
-    )
+    tmp_filepath = os.path.join(tempfile.gettempdir(), f"ShellOutTempFile.{img_ext}")
 
-    # !!! Note no run-mode first parameter, and user entered filename is empty string
     Gimp.progress_init("Saving a copy")
     Gimp.file_save(
         run_mode=Gimp.RunMode.NONINTERACTIVE,
         image=tmp_img,
-        file=Gio.File.new_for_path(tempfilename),
+        file=Gio.File.new_for_path(tmp_filepath),
         options=None,
     )
 
     # Invoke external command
-    Gimp.progress_init("Calling " + prog_to_run[0] + "...")
+    Gimp.progress_init("Calling " + prog_name + "...")
     Gimp.progress_pulse()
-    cmd = [str(prog_to_run[1]), str(tempfilename)]
+    cmd = [str(prog_filepath), str(tmp_filepath)]
     subprocess.Popen(cmd, shell=False).communicate()
 
     # Put it as a new layer in the opened image
-    newlayer2 = Gimp.file_load_layer(
+    filtered: Gimp.Layer = Gimp.file_load_layer(
         run_mode=Gimp.RunMode.NONINTERACTIVE,
         image=tmp_img,
-        file=Gio.File.new_for_path(tempfilename),
+        file=Gio.File.new_for_path(tmp_filepath),
     )
 
-    tmp_img.insert_layer(newlayer2, None, -1)
-    buffer = Gimp.edit_named_copy([newlayer2], "ShellOutTemp")
+    tmp_img.insert_layer(filtered, None, -1)
+    buffer: str = Gimp.edit_named_copy([filtered], "ShellOutTemp")
 
-    if visible == 0:
-        drawable.resize(newlayer2.get_width(), newlayer2.get_height(), 0, 0)
-        sel = Gimp.edit_named_paste(drawable, buffer, True)
+    if visible == LayerSource.USE_CURRENT_LAYER:
+        drawable.resize(filtered.get_width(), filtered.get_height(), 0, 0)
+        sel: Gimp.Layer = Gimp.edit_named_paste(drawable, buffer, True)
         Gimp.Item.transform_translate(
             drawable,
-            (tempdrawable.get_width() - newlayer2.get_width()) / 2,
-            (tempdrawable.get_height() - newlayer2.get_height()) / 2,
+            (tmp_drawable.get_width() - filtered.get_width()) / 2,
+            (tmp_drawable.get_height() - filtered.get_height()) / 2,
         )
     else:
-        temp.resize(newlayer2.get_width(), newlayer2.get_height(), 0, 0)
-        sel = Gimp.edit_named_paste(temp, buffer, True)
+        temp.resize(filtered.get_width(), filtered.get_height(), 0, 0)
+        sel: Gimp.Layer = Gimp.edit_named_paste(temp, buffer, True)
         Gimp.Item.transform_translate(
             temp,
-            (tempdrawable.get_width() - newlayer2.get_width()) / 2,
-            (tempdrawable.get_height() - newlayer2.get_height()) / 2,
+            (tmp_drawable.get_width() - filtered.get_width()) / 2,
+            (tmp_drawable.get_height() - filtered.get_height()) / 2,
         )
 
     temp.edit_clear()
@@ -229,7 +228,7 @@ def plugin_main(
         image.remove_channel(savedsel)
 
     # Cleanup temporary file & image
-    os.remove(tempfilename)
+    os.remove(tmp_filepath)
     tmp_img.delete()
 
     # End the undo group
