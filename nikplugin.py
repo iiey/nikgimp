@@ -22,6 +22,7 @@ from gi.repository import (
     Gio,
 )
 
+from enum import Enum
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
 
@@ -138,7 +139,7 @@ def plugin_main(
     image.undo_group_start()
 
     # Copy so the save operations doesn't affect the original
-    if visible == 0:
+    if visible == LayerSource.USE_CURRENT_LAYER:
         # Use the active drawable
         temp = drawable
     else:
@@ -239,6 +240,28 @@ def plugin_main(
     return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
 
+class LayerSource(str, Enum):
+    NEW_FROM_VISIBLE = "new_from_visible"
+    USE_CURRENT_LAYER = "use_current_layer"
+
+    @classmethod
+    def create_choice(cls) -> Gimp.Choice:
+        choice = Gimp.Choice.new()
+        choice.add(
+            nick=cls.NEW_FROM_VISIBLE,
+            id=1,
+            label="new from visible",
+            help="Apply filter on new layer created from the visibles",
+        )
+        choice.add(
+            nick=cls.USE_CURRENT_LAYER,
+            id=0,
+            label="use current layer",
+            help="Apply filter directly on the active layer",
+        )
+        return choice
+
+
 class NikPlugin(Gimp.PlugIn):
 
     def do_query_procedures(self):
@@ -260,16 +283,14 @@ class NikPlugin(Gimp.PlugIn):
         procedure.add_menu_path("<Image>/Filters/")
 
         # Replace PF_RADIO choice
-        visible_choice = Gimp.Choice.new()
-        visible_choice.add("new_from_visible", 1, "new from visible", "new layer")
-        visible_choice.add("use_current_layer", 0, "use current layer", "current layer")
+        visible_choice = LayerSource.create_choice()
         procedure.add_choice_argument(
-            "visible",
-            "Layer:",
-            "Choose layer source",
-            visible_choice,
-            "use_current_layer",
-            GObject.ParamFlags.READWRITE,
+            name="visible",
+            nick="Layer:",
+            blurb="Select the layer source",
+            choice=visible_choice,
+            value=LayerSource.NEW_FROM_VISIBLE,
+            flags=GObject.ParamFlags.READWRITE,
         )
 
         # Dropdown selection list of programs
