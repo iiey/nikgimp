@@ -30,6 +30,7 @@ from gi.repository import (
     Gimp,
     GimpUi,
     Gio,
+    Gtk,
 )
 
 from enum import Enum
@@ -249,12 +250,29 @@ def plugin_main(
     except Exception as e:
         image.undo_group_end()
         Gimp.context_pop()
+        show_alert(text=str(e), message=traceback.format_exc())
         return procedure.new_return_values(
             Gimp.PDBStatusType.EXECUTION_ERROR,
             GLib.Error(message=f"{str(e)}\n\n{traceback.format_exc()}"),
         )
 
     return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+
+def show_alert(text: str, message: str, parent=None) -> None:
+    """Create a popup dialog to show an error message"""
+
+    dialog = Gtk.MessageDialog(
+        transient_for=parent,
+        flags=0,
+        message_type=Gtk.MessageType.ERROR,
+        buttons=Gtk.ButtonsType.CLOSE,
+        text=text,
+    )
+    dialog.format_secondary_text(message)
+    dialog.set_title(f"{PROC_NAME} - Error")
+    dialog.run()
+    dialog.destroy()
 
 
 class LayerSource(str, Enum):
