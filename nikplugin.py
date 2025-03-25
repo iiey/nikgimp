@@ -2,9 +2,7 @@
 
 """
 VERSION:
-3.0 Make plugin compatible with Gimp 3.x
-    - Revise the code using v3.x API
-    - Refactor code and format with black
+3.0.0 Make plugin compatible with Gimp 3.x
 previous versions: see gimp2x/shellout.py
 
 LICENSE:
@@ -54,15 +52,14 @@ DOC = "Call an external program passing the active layer as a temp file"
 AUTHOR = "nemo"
 COPYRIGHT = "GNU General Public License v3"
 DATE = "2025-03-25"
+VERSION = "3.0.0"
 
 
 def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path, str]]:
     """
     Build a list of Nik programs installed on the system
-
     Args:
         idx: Optional index of the program to return details for
-
     Returns:
         If idx is None, returns a list of program names
         Otherwise, returns [prog_name, prog_filepath, output_ext] for the specified program
@@ -106,19 +103,16 @@ def plugin_main(
     It supports two modes:
       - When visible == 0, operates on the active drawable (current layer).
       - When visible != 0, creates a new layer from the composite of all visible layers
-
     Workflow:
-      - Show dialog in interactive mode for setting parameters (layer source and external program)
       - Start an undo group (let user undo all operations as a single step)
       - Copy and save the layer to a temporary file based on the "visible" setting
       - Call the chosen external Nik Collection program
-      - Load the modified result as a new layer and paste it
-      - Restore any saved selection and clean up temporary resources
+      - Load the modified result into 'image'
       - End the undo group and finalize
     """
 
     try:
-        # Show dialog in interactive mode
+        # Open dialog to get config parameters
         if run_mode == Gimp.RunMode.INTERACTIVE:
             GimpUi.init(PROC_NAME)
             Gegl.init(None)
@@ -138,55 +132,31 @@ def plugin_main(
 
         # Get the program to run and filetype
         prog_name, prog_filepath, img_ext = list_progs(prog_idx)
-
-        # Check if drawables is empty
-        if not drawables or len(drawables) == 0:
-            return procedure.new_return_values(
-                Gimp.PDBStatusType.CALLING_ERROR,
-                GLib.Error().new_literal(
-                    Gimp.PlugIn.error_quark(), "No drawable provided", 0
-                ),
-            )
-        drawable: Gimp.Drawable = drawables[0]
+        active_layer: Gimp.Layer = image.get_layers()[0]
 
         # Start an undo group
         Gimp.context_push()
         image.undo_group_start()
 
-        # Copy so the save operations doesn't affect the original
-        if visible == LayerSource.USE_CURRENT_LAYER:
-            # Use the active drawable
-            temp = drawable
+        # Clear current selection to avoid wrongly pasting the processed image
+        if not Gimp.Selection.is_empty(image):
+            Gimp.Selection.none(image)
+
+        # Prepare the layer to be processed
+        if visible == LayerSource.CURRENT_LAYER:
+            target_layer = active_layer
         else:
-            # Get the current visible
-            temp = Gimp.Layer.new_from_visible(image, image, prog_name)
-            image.insert_layer(temp, None, 0)
+            # prepare a new layer in 'image' from all the visibles
+            target_layer = Gimp.Layer.new_from_visible(image, image, prog_name)
+            image.insert_layer(target_layer, None, 0)
 
-        # Copy the layer content into the named buffer
-        buffer: str = Gimp.edit_named_copy([temp], "ShellOutTemp")
-
-        # Save selection if one exists
-        hassel = not Gimp.Selection.is_empty(image)
-        if hassel:
-            savedsel = Gimp.Selection.save(image)
-
-        # Create a new image with the copied content
+        # Intermediate storage enables exporting content to image then save to disk
+        buffer: str = Gimp.edit_named_copy([target_layer], "ShellOutTemp")
         tmp_img: Gimp.Image = Gimp.edit_named_paste_as_new_image(buffer)
         if not tmp_img:
-            image.undo_group_end()
-            Gimp.context_pop()
-            return procedure.new_return_values(
-                Gimp.PDBStatusType.EXECUTION_ERROR,
-                GLib.Error(message="Failed to create temporary image form buffer"),
-            )
+            raise Exception("Failed to create temporary image from buffer")
 
         Gimp.Image.undo_disable(tmp_img)
-
-        # Get the active layer from the temp image
-        tmp_drawable: Gimp.Drawable = tmp_img.get_selected_drawables()[0]
-
-        # Use temp file names from gimp, it reflects the user's choices in gimp.rc
-        # change as indicated if you always want to use the same temp file name
         tmp_filepath = os.path.join(tempfile.gettempdir(), f"TmpNik.{img_ext}")
 
         Gimp.progress_init("Saving a copy")
@@ -213,24 +183,19 @@ def plugin_main(
         tmp_img.insert_layer(filtered, None, -1)
         buffer: str = Gimp.edit_named_copy([filtered], "ShellOutTemp")
 
-        # Align the processed image to match the original's dimensions
-        target = drawable if visible == LayerSource.USE_CURRENT_LAYER else temp
+        # Align size and position
+        target = active_layer if visible == LayerSource.CURRENT_LAYER else target_layer
         target.resize(filtered.get_width(), filtered.get_height(), 0, 0)
         sel = Gimp.edit_named_paste(target, buffer, True)
         Gimp.Item.transform_translate(
             target,
-            (tmp_drawable.get_width() - filtered.get_width()) / 2,
-            (tmp_drawable.get_height() - filtered.get_height()) / 2,
+            (tmp_img.get_width() - filtered.get_width()) / 2,
+            (tmp_img.get_height() - filtered.get_height()) / 2,
         )
 
         target.edit_clear()
         Gimp.buffer_delete(buffer)
         Gimp.floating_sel_anchor(sel)
-
-        # Load up old selection
-        if hassel:
-            Gimp.Selection.load(savedsel)
-            image.remove_channel(savedsel)
 
         # Cleanup temporary file & image
         os.remove(tmp_filepath)
@@ -243,10 +208,9 @@ def plugin_main(
             GLib.Error(message=f"{str(e)}\n\n{traceback.format_exc()}"),
         )
     finally:
-        # Cleanup
         image.undo_group_end()
-        Gimp.displays_flush()
         Gimp.context_pop()
+        Gimp.displays_flush()
 
     return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
@@ -262,26 +226,26 @@ def show_alert(text: str, message: str, parent=None) -> None:
         text=text,
     )
     dialog.format_secondary_text(message)
-    dialog.set_title(f"{PROC_NAME} - Error")
+    dialog.set_title(f"{PROC_NAME} v{VERSION} - Error")
     dialog.run()
     dialog.destroy()
 
 
 class LayerSource(str, Enum):
-    NEW_FROM_VISIBLE = "new_from_visible"
-    USE_CURRENT_LAYER = "use_current_layer"
+    FROM_VISIBLES = "new_from_visibles"
+    CURRENT_LAYER = "use_current_layer"
 
     @classmethod
     def create_choice(cls) -> Gimp.Choice:
         choice = Gimp.Choice.new()
         choice.add(
-            nick=cls.NEW_FROM_VISIBLE,
+            nick=cls.FROM_VISIBLES,
             id=1,
             label="new from visible",
             help="Apply filter on new layer created from the visibles",
         )
         choice.add(
-            nick=cls.USE_CURRENT_LAYER,
+            nick=cls.CURRENT_LAYER,
             id=0,
             label="use current layer",
             help="Apply filter directly on the active layer",
@@ -316,7 +280,7 @@ class NikPlugin(Gimp.PlugIn):
             nick="Layer:",
             blurb="Select the layer source",
             choice=visible_choice,
-            value=LayerSource.NEW_FROM_VISIBLE,
+            value=LayerSource.FROM_VISIBLES,
             flags=GObject.ParamFlags.READWRITE,
         )
 
