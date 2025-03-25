@@ -1,70 +1,89 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """
-ShellOut.py
-call an external program passing the active layer as a temp file.  Windows Only(?)
-
-Author:
-Rob Antonishen
-
 Version:
-0.7 fixed file save bug where all files were png regardless of extension
-0.6 modified to allow for a returned layer that is a different size
-   than the saved layer for
-  0.5 file extension parameter in program list.
-0.4 modified to support many optional programs.
-
-this script is modelled after the mm extern LabCurves trace plugin
-by Michael Munzert http://www.mm-log.com/lab-curves-gimp
-
-and thanks to the folds at gimp-chat has grown a bit ;)
-
-License:
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; version 3 of the License.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-The GNU Public License is available at
-http://www.gnu.org/copyleft/gpl.html
-
+3.0 Make plugin compatible with Gimp 3.x
+    - Revise the code using v3.x API
+    - Refactor code and format with black
 """
 
-from gimpfu import *
+import gi
+
+gi.require_version("Gimp", "3.0")
+gi.require_version("GimpUi", "3.0")
+gi.require_version("Gegl", "0.4")
+
+from gi.repository import (
+    GLib,
+    GObject,
+    Gegl,
+    Gimp,
+    GimpUi,
+)
+
+import os
 import shlex
 import subprocess
-import os, sys
+import sys
 import tempfile
+import traceback
+
+# Define plug-in metadata
+PROC_NAME = "NikCollection"
+HELP = "Call an external program"
+DOC = "Call an external program passing the active layer as a temp file"
+AUTHOR = "nemo"
+COPYRIGHT = "GNU General Public License v3"
+DATE = "2025-03-25"
 
 
-# program list function (globals are evil)
 def listcommands(option=None):
-    #
-    # Insert additional shell command into this list.  They will show up in the drop menu in this order.
+
+    # Insert additional shell command into this list. They will show up in the drop menu in this order.
     # Use the syntax:
     # ["Menu Label", "command", "ext"]
     #
-    # Where what gets executed is command fileame so include and flags needed in the command.
+    # Where what gets executed is command filename, so include any flags needed in the command.
     programlist = [
-        ["DFine 2", "\"C:\\Program Files\\Google\\Nik Collection\\Dfine 2\\Dfine2.exe\"", "png"],
-        ["Sharpener Pro 3", "\"C:\\Program Files\\Google\\Nik Collection\\Sharpener Pro 3\\SHP3OS.exe\"", "png"],
-        ["Viveza 2", "\"C:\\Program Files\\Google\\Nik Collection\\Viveza 2\\Viveza 2.exe\"", "png"],
-        ["Color Efex Pro 4", "\"C:\\Program Files\\Google\\Nik Collection\\Color Efex Pro 4\\Color Efex Pro 4.exe\"",
-         "jpg"],
-        ["Analog Efex Pro 2", "\"C:\\Program Files\\Google\\Nik Collection\\Analog Efex Pro 2\\Analog Efex Pro 2.exe\"",
-         "jpg"],
-        ["HDR Efex Pro 2", "\"C:\\Program Files\\Google\\Nik Collection\\HDR Efex Pro 2\\HDR Efex Pro 2.exe\"", "jpg"],
-        ["Silver Efex Pro 2", "\"C:\\Program Files\\Google\\Nik Collection\\Silver Efex Pro 2\\Silver Efex Pro 2.exe\"",
-         "jpg"],
-        ["", "", ""]
+        [
+            "DFine 2",
+            '"C:\\Program Files\\Google\\Nik Collection\\Dfine 2\\Dfine2.exe"',
+            "png",
+        ],
+        [
+            "Sharpener Pro 3",
+            '"C:\\Program Files\\Google\\Nik Collection\\Sharpener Pro 3\\SHP3OS.exe"',
+            "png",
+        ],
+        [
+            "Viveza 2",
+            '"C:\\Program Files\\Google\\Nik Collection\\Viveza 2\\Viveza 2.exe"',
+            "png",
+        ],
+        [
+            "Color Efex Pro 4",
+            '"C:\\Program Files\\Google\\Nik Collection\\Color Efex Pro 4\\Color Efex Pro 4.exe"',
+            "jpg",
+        ],
+        [
+            "Analog Efex Pro 2",
+            '"C:\\Program Files\\Google\\Nik Collection\\Analog Efex Pro 2\\Analog Efex Pro 2.exe"',
+            "jpg",
+        ],
+        [
+            "HDR Efex Pro 2",
+            '"C:\\Program Files\\Google\\Nik Collection\\HDR Efex Pro 2\\HDR Efex Pro 2.exe"',
+            "jpg",
+        ],
+        [
+            "Silver Efex Pro 2",
+            '"C:\\Program Files\\Google\\Nik Collection\\Silver Efex Pro 2\\Silver Efex Pro 2.exe"',
+            "jpg",
+        ],
+        ["", "", ""],
     ]
 
-    if option == None:  # no parameter return menu list, otherwise return the appropriate array
+    if option is None:
         menulist = []
         for i in programlist:
             if i[0] != "":
@@ -74,105 +93,203 @@ def listcommands(option=None):
         return programlist[option]
 
 
-def plugin_main(image, drawable, visible, command):
-    pdb.gimp_image_undo_group_start(image)
+def plugin_main(procedure, run_mode, image, drawables, config, data):
+
+    # Show dialog in interactive mode
+    if run_mode == Gimp.RunMode.INTERACTIVE:
+        GimpUi.init(PROC_NAME)
+        Gegl.init(None)
+        dialog = GimpUi.ProcedureDialog(procedure=procedure, config=config)
+        dialog.fill(None)
+        if not dialog.run():
+            dialog.destroy()
+            return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
+        dialog.destroy()
+
+    # Get parameters
+    visible = config.get_property("visible")
+    command_idx = config.get_property("command")
+
+    # Check if drawables is empty
+    if not drawables or len(drawables) == 0:
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.CALLING_ERROR,
+            GLib.Error().new_literal(
+                Gimp.PlugIn.error_quark(), "No drawable provided", 0
+            ),
+        )
+    drawable = drawables[0]
+
+    # Start an undo group
+    Gimp.context_push()
+    image.undo_group_start()
 
     # Copy so the save operations doesn't affect the original
     if visible == 0:
-        # Save in temporary.  Note: empty user entered file name
-        temp = pdb.gimp_image_get_active_drawable(image)
+        # Use the active drawable
+        temp = drawable
     else:
         # Get the current visible
-        temp = pdb.gimp_layer_new_from_visible(image, image, "Visible")
-        image.add_layer(temp, 0)
+        temp = Gimp.Layer.new_from_visible(image, image, "Visible")
+        image.insert_layer(temp, None, 0)
 
-    buffer = pdb.gimp_edit_named_copy(temp, "ShellOutTemp")
+    # Copy the layer content
+    buffer = Gimp.edit_named_copy([temp], "ShellOutTemp")
 
-    # save selection if one exists
-    hassel = pdb.gimp_selection_is_empty(image) == 0
+    # Save selection if one exists
+    hassel = not Gimp.Selection.is_empty(image)
     if hassel:
-        savedsel = pdb.gimp_selection_save(image)
+        savedsel = Gimp.Selection.save(image)
 
-    tempimage = pdb.gimp_edit_named_paste_as_new(buffer)
-    pdb.gimp_buffer_delete(buffer)
+    # Create a new image with the copied content
+    tempimage = Gimp.edit_named_paste_as_new_image(buffer)
+    Gimp.Buffer.delete(buffer)
     if not tempimage:
-        raise RuntimeError
-    pdb.gimp_image_undo_disable(tempimage)
+        image.undo_group_end()
+        Gimp.context_pop()
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.EXECUTION_ERROR,
+            GLib.Error(),
+        )
 
-    tempdrawable = pdb.gimp_image_get_active_layer(tempimage)
+    Gimp.Image.undo_disable(tempimage)
 
-    # get the program to run and filetype.
-    progtorun = listcommands(command)
+    # Get the active layer from the temp image
+    tempdrawable = Gimp.Image.get_active_layer(tempimage)
+
+    # Get the program to run and filetype
+    progtorun = listcommands(command_idx)
 
     # Use temp file names from gimp, it reflects the user's choices in gimp.rc
     # change as indicated if you always want to use the same temp file name
     # tempfilename = pdb.gimp_temp_name(progtorun[2])
-    tempfilename = os.path.join(tempfile.gettempdir(), "ShellOutTempFile." + progtorun[2])
+    tempfilename = os.path.join(
+        tempfile.gettempdir(), "ShellOutTempFile." + progtorun[2]
+    )
 
     # !!! Note no run-mode first parameter, and user entered filename is empty string
-    pdb.gimp_progress_set_text("Saving a copy")
-    pdb.gimp_file_save(tempimage, tempdrawable, tempfilename, tempfilename)
+    Gimp.progress_init("Saving a copy")
+    Gimp.file_save(
+        Gimp.RunMode.NONINTERACTIVE,
+        tempimage,
+        tempdrawable,
+        GLib.file_new_for_path(tempfilename),
+    )
 
     # Build command line call
-    command = progtorun[1] + " \"" + tempfilename + "\""
+    command = progtorun[1] + ' "' + tempfilename + '"'
     args = shlex.split(command)
 
     # Invoke external command
-    pdb.gimp_progress_set_text("calling " + progtorun[0] + "...")
-    pdb.gimp_progress_pulse()
+    Gimp.progress_init("Calling " + progtorun[0] + "...")
+    Gimp.progress_pulse()
     child = subprocess.Popen(args, shell=False)
     child.communicate()
 
-    # put it as a new layer in the opened image
+    # Put it as a new layer in the opened image
     try:
-        newlayer2 = pdb.gimp_file_load_layer(tempimage, tempfilename)
-    except:
-        RuntimeError
+        newlayer2 = Gimp.file_load_layer(
+            Gimp.RunMode.NONINTERACTIVE,
+            tempimage,
+            GLib.file_new_for_path(tempfilename),
+        )
+    except Exception as e:
+        print(f"Error loading file: {e}")
+        image.undo_group_end()
+        Gimp.context_pop()
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.EXECUTION_ERROR,
+            GLib.Error(),
+        )
 
-    tempimage.add_layer(newlayer2, -1)
-    buffer = pdb.gimp_edit_named_copy(newlayer2, "ShellOutTemp")
+    tempimage.insert_layer(newlayer2, None, -1)
+    buffer = Gimp.edit_named_copy([newlayer2], "ShellOutTemp")
 
     if visible == 0:
-        drawable.resize(newlayer2.width, newlayer2.height, 0, 0)
-        sel = pdb.gimp_edit_named_paste(drawable, buffer, 1)
-        drawable.translate((tempdrawable.width - newlayer2.width) / 2, (tempdrawable.height - newlayer2.height) / 2)
+        Gimp.Item.resize(drawable, newlayer2.get_width(), newlayer2.get_height(), 0, 0)
+        sel = Gimp.edit_named_paste(drawable, buffer, True)
+        Gimp.Item.transform_translate(
+            drawable,
+            (tempdrawable.get_width() - newlayer2.get_width()) / 2,
+            (tempdrawable.get_height() - newlayer2.get_height()) / 2,
+        )
     else:
-        temp.resize(newlayer2.width, newlayer2.height, 0, 0)
-        sel = pdb.gimp_edit_named_paste(temp, buffer, 1)
-        temp.translate((tempdrawable.width - newlayer2.width) / 2, (tempdrawable.height - newlayer2.height) / 2)
+        Gimp.Item.resize(temp, newlayer2.get_width(), newlayer2.get_height(), 0, 0)
+        sel = Gimp.edit_named_paste(temp, buffer, True)
+        Gimp.Item.transform_translate(
+            temp,
+            (tempdrawable.get_width() - newlayer2.get_width()) / 2,
+            (tempdrawable.get_height() - newlayer2.get_height()) / 2,
+        )
 
-    pdb.gimp_buffer_delete(buffer)
-    pdb.gimp_edit_clear(temp)
-    pdb.gimp_floating_sel_anchor(sel)
+    Gimp.Buffer.delete(buffer)
+    Gimp.edit_clear([temp])
+    Gimp.floating_sel_anchor(sel)
 
-    # load up old selection
+    # Load up old selection
     if hassel:
-        pdb.gimp_selection_load(savedsel)
+        Gimp.Selection.load(savedsel)
         image.remove_channel(savedsel)
 
-    # cleanup
+    # Cleanup
     os.remove(tempfilename)  # delete the temporary file
-    gimp.delete(tempimage)  # delete the temporary image
+    tempimage.delete()  # delete the temporary image
 
-    # Note the new image is dirty in Gimp and the user will be asked to save before closing.
-    pdb.gimp_image_undo_group_end(image)
-    gimp.displays_flush()
+    # End the undo group
+    image.undo_group_end()
+    Gimp.displays_flush()
+    Gimp.context_pop()
+
+    return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
 
-register(
-    "python_fu_shellout",
-    "Call an external program",
-    "Call an external program",
-    "Rob Antonishen",
-    "Copyright 2011 Rob Antonishen",
-    "2011",
-    "<Image>/Filters/ShellOut...",
-    "RGB*, GRAY*",
-    [(PF_RADIO, "visible", "Layer:", 1, (("new from visible", 1), ("current layer", 0))),
-     (PF_OPTION, "command", "Program:", 0, listcommands())
-     ],
-    [],
-    plugin_main,
-)
+class NikPlugin(Gimp.PlugIn):
 
-main()
+    def do_query_procedures(self):
+        return [PROC_NAME]
+
+    def do_create_procedure(self, name):
+        procedure = Gimp.ImageProcedure.new(
+            self,
+            name,
+            Gimp.PDBProcType.PLUGIN,
+            plugin_main,
+            None,
+        )
+
+        procedure.set_image_types("RGB*, GRAY*")
+        procedure.set_attribution(AUTHOR, COPYRIGHT, DATE)
+        procedure.set_documentation(HELP, DOC, None)
+        procedure.set_menu_label(PROC_NAME)
+        procedure.add_menu_path("<Image>/Filters/")
+
+        # Replace PF_RADIO choice
+        visible_choice = Gimp.Choice.new()
+        visible_choice.add("new_from_visible", 1, "new from visible", "new layer")
+        visible_choice.add("current_layer", 0, "use current layer", "current layer")
+        procedure.add_choice_argument(
+            "visible",
+            "Layer:",
+            "Choose layer source",
+            visible_choice,
+            "new_from_visible",
+            GObject.ParamFlags.READWRITE,
+        )
+
+        # Dropdown selection list of programs
+        command_choice = Gimp.Choice.new()
+        programs = listcommands()
+        for idx, prog in enumerate(programs):
+            command_choice.add(prog, idx, prog, prog)
+        procedure.add_choice_argument(
+            "command",
+            "Program:",
+            "Select external program to run",
+            command_choice,
+            programs[0],
+            GObject.ParamFlags.READWRITE,
+        )
+        return procedure
+
+
+Gimp.main(NikPlugin.__gtype__, sys.argv)
