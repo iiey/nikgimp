@@ -213,24 +213,17 @@ def plugin_main(
         tmp_img.insert_layer(filtered, None, -1)
         buffer: str = Gimp.edit_named_copy([filtered], "ShellOutTemp")
 
-        if visible == LayerSource.USE_CURRENT_LAYER:
-            drawable.resize(filtered.get_width(), filtered.get_height(), 0, 0)
-            sel: Gimp.Layer = Gimp.edit_named_paste(drawable, buffer, True)
-            Gimp.Item.transform_translate(
-                drawable,
-                (tmp_drawable.get_width() - filtered.get_width()) / 2,
-                (tmp_drawable.get_height() - filtered.get_height()) / 2,
-            )
-        else:
-            temp.resize(filtered.get_width(), filtered.get_height(), 0, 0)
-            sel: Gimp.Layer = Gimp.edit_named_paste(temp, buffer, True)
-            Gimp.Item.transform_translate(
-                temp,
-                (tmp_drawable.get_width() - filtered.get_width()) / 2,
-                (tmp_drawable.get_height() - filtered.get_height()) / 2,
-            )
+        # Align the processed image to match the original's dimensions
+        target = drawable if visible == LayerSource.USE_CURRENT_LAYER else temp
+        target.resize(filtered.get_width(), filtered.get_height(), 0, 0)
+        sel = Gimp.edit_named_paste(target, buffer, True)
+        Gimp.Item.transform_translate(
+            target,
+            (tmp_drawable.get_width() - filtered.get_width()) / 2,
+            (tmp_drawable.get_height() - filtered.get_height()) / 2,
+        )
 
-        temp.edit_clear()
+        target.edit_clear()
         Gimp.buffer_delete(buffer)
         Gimp.floating_sel_anchor(sel)
 
@@ -243,18 +236,17 @@ def plugin_main(
         os.remove(tmp_filepath)
         tmp_img.delete()
 
-        # End the undo group
-        image.undo_group_end()
-        Gimp.displays_flush()
-        Gimp.context_pop()
     except Exception as e:
-        image.undo_group_end()
-        Gimp.context_pop()
         show_alert(text=str(e), message=traceback.format_exc())
         return procedure.new_return_values(
             Gimp.PDBStatusType.EXECUTION_ERROR,
             GLib.Error(message=f"{str(e)}\n\n{traceback.format_exc()}"),
         )
+    finally:
+        # Cleanup
+        image.undo_group_end()
+        Gimp.displays_flush()
+        Gimp.context_pop()
 
     return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
