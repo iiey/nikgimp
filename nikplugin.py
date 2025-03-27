@@ -91,6 +91,16 @@ def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path, s
 
 def run_nik(prog_idx: int, gimp_img: Gimp.Image) -> Optional[str]:
 
+    def check_issue_prog(prog_name: str) -> None:
+        if "hdr" in prog_name.lower():
+            msg = (
+                "'Save' button does not work in this program.\n"
+                "Use 'File > Save Image as...' with the following path\n"
+                "to manually replace intermediate processed image instead!\n"
+                f"{img_path}"
+            )
+            show_alert(prog_name, msg)
+
     prog_name, prog_filepath, img_ext = list_progs(prog_idx)
     img_path = os.path.join(tempfile.gettempdir(), f"TmpNik.{img_ext}")
 
@@ -102,6 +112,9 @@ def run_nik(prog_idx: int, gimp_img: Gimp.Image) -> Optional[str]:
         file=Gio.File.new_for_path(img_path),
         options=None,
     )
+
+    # NOTE: silly workaround for troublesome program
+    check_issue_prog(prog_name)
 
     # Invoke external command
     time_before = os.path.getmtime(img_path)
@@ -124,7 +137,7 @@ def show_alert(text: str, message: str, parent=None) -> None:
         text=text,
     )
     dialog.format_secondary_text(message)
-    dialog.set_title(f"{PROC_NAME} v{VERSION} - Error")
+    dialog.set_title(f"{PROC_NAME} v{VERSION}")
     dialog.run()
     dialog.destroy()
 
