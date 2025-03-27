@@ -2,6 +2,7 @@
 
 """
 VERSION:
+3.0.1 Create program list dynamically
 3.0.0 Make plugin compatible with Gimp 3.x
 previous versions: see gimp2x/shellout.py
 
@@ -42,7 +43,7 @@ import tempfile
 import traceback
 
 # NOTE: Update this base path to match your installation
-NIK_BASE_PATH = Path("C:/Program Files/Google/Nik Collection")
+NIK_BASE_PATH = "C:/Program Files/Google/Nik Collection"
 
 # Define plug-in metadata
 PROC_NAME = "NikCollection"
@@ -51,7 +52,7 @@ DOC = "Call an external program passing the active layer as a temp file"
 AUTHOR = "nemo"
 COPYRIGHT = "GNU General Public License v3"
 DATE = "2025-03-25"
-VERSION = "3.0.0"
+VERSION = "3.0.1"
 
 
 def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path, str]]:
@@ -64,29 +65,40 @@ def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path, s
         Otherwise, returns [prog_name, prog_filepath, output_ext] for the specified program
     """
 
-    # Assume all nik programs are installed in the same base directory
-    # Define program details as: (program_name, executable_filename, file_extension)
-    progs_info = [
-        ("Analog Efex Pro 2", "Analog Efex Pro 2.exe", "jpg"),
-        ("Color Efex Pro 4", "Color Efex Pro 4.exe", "jpg"),
-        ("DFine 2", "Dfine2.exe", "png"),
-        ("HDR Efex Pro 2", "HDR Efex Pro 2.exe", "jpg"),
-        ("Sharpener Pro 3", "SHP3OS.exe", "png"),
-        ("Silver Efex Pro 2", "Silver Efex Pro 2.exe", "jpg"),
-        ("Viveza 2", "Viveza 2.exe", "png"),
-    ]
+    def get_exec(prog_dir: Path) -> Optional[Path]:
+        """Check for executable in the given directory"""
+        if executables := list(prog_dir.glob("*.exe")):
+            return executables[0]
+        else:
+            return None
 
-    # Build the list of existing programs
     progs_lst = []
-    for prog, exe, ext in progs_info:
-        fullpath = NIK_BASE_PATH / prog / exe
-        if fullpath.exists():
-            progs_lst.append((prog, fullpath, ext))
+    base_path = Path(NIK_BASE_PATH)
+    if base_path.is_dir():
+        sub_dirs = [d for d in base_path.iterdir() if d.is_dir()]
+        for prog_dir in sub_dirs:
+            # prefer looking for 64-bit first
+            bit64_dirs = [
+                d
+                for d in prog_dir.iterdir()
+                if d.is_dir() and "64-bit" in d.name.lower()
+            ]
+            exec_file = get_exec(bit64_dirs[0]) if bit64_dirs else None
+            # fallback to default version if not found
+            if exec_file is None:
+                exec_file = get_exec(prog_dir)
+            # only append to final list if one found
+            if exec_file:
+                prog_detail = (prog_dir.name, exec_file, "jpg")
+                progs_lst.append(prog_detail)
+    progs_lst.sort(key=lambda x: x[0].lower())  # sort alphabetically
 
     if idx is None:
         return [prog[0] for prog in progs_lst]
-    else:
+    elif 0 <= idx < len(progs_lst):
         return progs_lst[idx]
+    else:
+        return []  # invalid index
 
 
 def run_nik(prog_idx: int, gimp_img: Gimp.Image) -> Optional[str]:
