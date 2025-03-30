@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -52,7 +53,7 @@ DOC = "Call an external program passing the active layer as a temp file"
 AUTHOR = "nemo"
 COPYRIGHT = "GNU General Public License v3"
 DATE = "2025-03-25"
-VERSION = "3.0.1"
+VERSION = "3.0.2"
 
 
 def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path]]:
@@ -101,17 +102,46 @@ def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path]]:
         return []  # invalid index
 
 
-def run_nik(prog_idx: int, gimp_img: Gimp.Image) -> Optional[str]:
+def find_hdr_output(prog: str, input_path: Path) -> Optional[Path]:
+    """
+    Guess output file of 'prog' based on OS
+    It typically extends original input file with '_HDR' and stores under the Documents folder
+    """
 
-    def check_issue_prog(prog_name: str) -> None:
-        if "hdr" in prog_name.lower():
-            msg = (
-                "'Save' button does not work in this program.\n"
-                "Use 'File > Save Image as...' with the following path\n"
-                "to manually replace intermediate processed image instead!\n"
-                f"{img_path}"
-            )
-            show_alert(prog_name, msg)
+    # NOTE: workaround for troublesome program
+    if prog != "HDR Efex Pro 2":
+        return None
+
+    fname = f"{input_path.stem}_HDR{input_path.suffix}"
+    # NOTE: extend paths correspondingly if you custom your documents folder
+    if sys.platform in "win32":
+        candidate_paths = [
+            Path.home() / "Documents",
+            Path("D:/Documents"),
+        ]
+    if sys.platform == "darwin":
+        candidate_paths = [
+            Path.home() / "Documents",
+        ]
+    elif sys.platform.startswith("linux"):
+        wine_user = os.environ.get("USER", os.environ.get("USERNAME", "user"))
+        candidate_paths = [
+            Path.home() / f".wine/drive_c/users/{wine_user}/My Documents",
+        ]
+
+    for path in candidate_paths:
+        if (out_path := (path / fname).resolve()).is_file():
+            return out_path
+
+    show_alert(
+        text=f"{prog} output '{fname}' not found",
+        message=f"Plugin cannot identify 'Documents' path on your system.",
+    )
+
+    return None
+
+
+def run_nik(prog_idx: int, gimp_img: Gimp.Image) -> Optional[str]:
 
     prog_name, prog_filepath = list_progs(prog_idx)
     img_path = os.path.join(tempfile.gettempdir(), f"tmpNik.jpg")
@@ -125,15 +155,17 @@ def run_nik(prog_idx: int, gimp_img: Gimp.Image) -> Optional[str]:
         options=None,
     )
 
-    # NOTE: silly workaround for troublesome program
-    check_issue_prog(prog_name)
-
     # Invoke external command
     time_before = os.path.getmtime(img_path)
     Gimp.progress_init(f"Calling {prog_name}...")
     Gimp.progress_pulse()
     cmd = [str(prog_filepath), img_path]
     subprocess.check_call(cmd)
+
+    # Move output file to the desinged location so gimp can pick it up
+    if hdr_path := find_hdr_output(prog_name, Path(img_path)):
+        shutil.move(hdr_path, img_path)
+
     time_after = os.path.getmtime(img_path)
 
     return None if time_before == time_after else img_path
