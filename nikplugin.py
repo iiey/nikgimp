@@ -67,6 +67,11 @@ def find_nik_installation() -> Path:
             Path("C:/Program Files (x86)/Google"),
             Path("C:/Program Files/DxO"),
         ]
+    elif sys.platform == "darwin":
+        possible_paths = [
+            Path("/Applications"),
+            Path("~/Applications"),
+        ]
     elif sys.platform.startswith("linux"):
         possible_paths = [
             Path.home() / f".wine/drive_c/Program Files/Google",
@@ -109,22 +114,28 @@ def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path]]:
     progs_lst = []
     base_path = find_nik_installation()
     if base_path.is_dir():
-        sub_dirs = [d for d in base_path.iterdir() if d.is_dir()]
-        for prog_dir in sub_dirs:
-            # prefer looking for 64-bit first
-            bit64_dirs = [
-                d
-                for d in prog_dir.iterdir()
-                if d.is_dir() and "64-bit" in d.name.lower()
-            ]
-            exec_file = get_exec(bit64_dirs[0]) if bit64_dirs else None
-            # fallback to default version if not found
-            if exec_file is None:
-                exec_file = get_exec(prog_dir)
-            # only append to final list if one found
-            if exec_file:
-                prog_detail = (prog_dir.name, exec_file)
-                progs_lst.append(prog_detail)
+        # on mac, programs located directly under installation folder
+        if sys.platform == "darwin":
+            for prog_item in base_path.iterdir():
+                if prog_item.is_dir() and prog_item.suffix == ".app":
+                    progs_lst.append((prog_item.stem, prog_item))
+        else:
+            sub_dirs = [d for d in base_path.iterdir() if d.is_dir()]
+            for prog_dir in sub_dirs:
+                # prefer looking for 64-bit first
+                bit64_dirs = [
+                    d
+                    for d in prog_dir.iterdir()
+                    if d.is_dir() and "64-bit" in d.name.lower()
+                ]
+                exec_file = get_exec(bit64_dirs[0]) if bit64_dirs else None
+                # fallback to default version if not found
+                if exec_file is None:
+                    exec_file = get_exec(prog_dir)
+                # only append to final list if one is found
+                if exec_file:
+                    prog_detail = (prog_dir.name, exec_file)
+                    progs_lst.append(prog_detail)
     progs_lst.sort(key=lambda x: x[0].lower())  # sort alphabetically
 
     if idx is None:
@@ -153,6 +164,7 @@ def find_hdr_output(prog: str, input_path: Path) -> Optional[Path]:
             Path("D:/Documents"),
         ]
     if sys.platform == "darwin":
+        # NOTE: not work, absolute no idea where mac prog saves the output
         candidate_paths = [
             Path.home() / "Documents",
         ]
@@ -192,8 +204,13 @@ def run_nik(prog_idx: int, gimp_img: Gimp.Image) -> Optional[str]:
     time_before = os.path.getmtime(img_path)
     Gimp.progress_init(f"Calling {prog_name}...")
     Gimp.progress_pulse()
-    cmd_wine = ["wine"] if sys.platform.startswith("linux") else []
-    cmd = cmd_wine + [str(prog_filepath), img_path]
+    if sys.platform == "darwin":
+        prog_caller = ["open", "-a"]
+    elif sys.platform == "linux":
+        prog_caller = ["wine"]
+    else:
+        prog_caller = []
+    cmd = prog_caller + [str(prog_filepath), img_path]
     subprocess.check_call(cmd)
 
     # Move output file to the desinged location so gimp can pick it up
