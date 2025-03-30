@@ -55,14 +55,14 @@ DATE = "2025-03-25"
 VERSION = "3.0.1"
 
 
-def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path, str]]:
+def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path]]:
     """
     Build a list of Nik programs installed on the system
     Args:
         idx: Optional index of the program to return details for
     Returns:
         If idx is None, returns a list of program names
-        Otherwise, returns [prog_name, prog_filepath, output_ext] for the specified program
+        Otherwise, returns [prog_name, prog_filepath] for the specified program
     """
 
     def get_exec(prog_dir: Path) -> Optional[Path]:
@@ -89,7 +89,7 @@ def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path, s
                 exec_file = get_exec(prog_dir)
             # only append to final list if one found
             if exec_file:
-                prog_detail = (prog_dir.name, exec_file, "jpg")
+                prog_detail = (prog_dir.name, exec_file)
                 progs_lst.append(prog_detail)
     progs_lst.sort(key=lambda x: x[0].lower())  # sort alphabetically
 
@@ -113,8 +113,8 @@ def run_nik(prog_idx: int, gimp_img: Gimp.Image) -> Optional[str]:
             )
             show_alert(prog_name, msg)
 
-    prog_name, prog_filepath, img_ext = list_progs(prog_idx)
-    img_path = os.path.join(tempfile.gettempdir(), f"TmpNik.{img_ext}")
+    prog_name, prog_filepath = list_progs(prog_idx)
+    img_path = os.path.join(tempfile.gettempdir(), f"tmpNik.jpg")
 
     # Save gimp image to disk
     Gimp.progress_init("Saving a copy")
