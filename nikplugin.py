@@ -53,7 +53,7 @@ DOC = "Call an external program passing the active layer as a temp file"
 AUTHOR = "nemo"
 COPYRIGHT = "GNU General Public License v3"
 DATE = "2025-03-30"
-VERSION = "3.0.3"
+VERSION = "3.0.4"
 
 
 def find_nik_installation() -> Path:
@@ -74,7 +74,7 @@ def find_nik_installation() -> Path:
         ]
     elif sys.platform.startswith("linux"):
         possible_paths = [
-            Path.home() / f".wine/drive_c/Program Files/Google",
+            Path.home() / ".wine/drive_c/Program Files/Google",
         ]
 
     possible_paths = [p / "Nik Collection" for p in possible_paths]
@@ -108,8 +108,7 @@ def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path]]:
         """Check for executable in the given directory"""
         if executables := list(prog_dir.glob("*.exe")):
             return executables[0]
-        else:
-            return None
+        return None
 
     progs_lst = []
     base_path = find_nik_installation()
@@ -140,10 +139,9 @@ def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path]]:
 
     if idx is None:
         return [prog[0] for prog in progs_lst]
-    elif 0 <= idx < len(progs_lst):
+    if 0 <= idx < len(progs_lst):
         return progs_lst[idx]
-    else:
-        return []  # invalid index
+    return []  # invalid index
 
 
 def find_hdr_output(prog: str, input_path: Path) -> Optional[Path]:
@@ -174,22 +172,25 @@ def find_hdr_output(prog: str, input_path: Path) -> Optional[Path]:
             Path.home() / f".wine/drive_c/users/{wine_user}/My Documents",
         ]
 
-    for path in candidate_paths:
+    doc_paths = [p for p in candidate_paths if p.is_dir()]
+    for path in doc_paths:
         if (out_path := (path / fname).resolve()).is_file():
             return out_path
 
-    show_alert(
-        text=f"{prog} output '{fname}' not found",
-        message=f"Plugin cannot identify 'Documents' path on your system.",
-    )
+    if not doc_paths:
+        show_alert(
+            text=f"{prog} output '{fname}' not found",
+            message="Plugin cannot identify 'Documents' path on your system.",
+        )
 
     return None
 
 
 def run_nik(prog_idx: int, gimp_img: Gimp.Image) -> Optional[str]:
+    """Invoke external Nik program"""
 
     prog_name, prog_filepath = list_progs(prog_idx)
-    img_path = os.path.join(tempfile.gettempdir(), f"tmpNik.jpg")
+    img_path = os.path.join(tempfile.gettempdir(), "tmpNik.jpg")
 
     # Save gimp image to disk
     Gimp.progress_init("Saving a copy")
@@ -223,6 +224,7 @@ def run_nik(prog_idx: int, gimp_img: Gimp.Image) -> Optional[str]:
 
 
 def show_alert(text: str, message: str, parent=None) -> None:
+    """Popup a message dialog with the given text and message"""
 
     dialog = Gtk.MessageDialog(
         transient_for=parent,
@@ -241,12 +243,13 @@ def plugin_main(
     procedure: Gimp.Procedure,
     run_mode: Gimp.RunMode,
     image: Gimp.Image,
-    drawables: List[Gimp.Drawable],
+    drawables: List[Gimp.Drawable],  # pylint: disable=W0613
     config: Gimp.ProcedureConfig,
-    data: Any,
+    run_data: Any,  # pylint: disable=W0613
 ) -> Gimp.ValueArray:
     """
-    Main function executed by the plugin. Call an external Nik Collection program on the active layer
+    Main function executed by the plugin.
+    Call an external Nik Collection program on the active layer
     It supports two modes:
       - When visible == 0, operates on the active drawable (current layer).
       - When visible != 0, creates a new layer from the composite of all visible layers
@@ -344,11 +347,11 @@ def plugin_main(
         tmp_img.delete()
 
         return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
-    except Exception as e:
-        show_alert(text=str(e), message=traceback.format_exc())
+    except Exception as error:
+        show_alert(text=str(error), message=traceback.format_exc())
         return procedure.new_return_values(
             Gimp.PDBStatusType.EXECUTION_ERROR,
-            GLib.Error(message=f"{str(e)}\n\n{traceback.format_exc()}"),
+            GLib.Error(message=f"{str(error)}\n\n{traceback.format_exc()}"),
         )
     finally:
         image.undo_group_end()
@@ -413,14 +416,14 @@ class NikPlugin(Gimp.PlugIn):
         command_choice = Gimp.Choice.new()
         programs = list_progs()
         for idx, prog in enumerate(programs):
-            # the get_property(choice_name) will return 'nick' not 'id' so str(id) to get the index later
+            # the get_property(choice_name) returns 'nick' not 'id' so str(id) to get idx later
             command_choice.add(str(idx), idx, prog, prog)
         procedure.add_choice_argument(
             "command",
             "Program:",
             "Select external program to run",
             command_choice,
-            str(idx),
+            "0",
             GObject.ParamFlags.READWRITE,
         )
         return procedure

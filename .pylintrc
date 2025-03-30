@@ -1,0 +1,14 @@
+[MESSAGES_CONTROL]
+disable=
+    C0115,  # missing-class-docstring
+    C0116,  # missing-function-docstring
+    C0411,  # wrong-import-order
+    C0413,  # wrong-import-position, false positive because of 'require'
+    R0913,  # too-many-arguments, false positive, it's GIMP function signature
+    R0914,  # too-many-locals
+    R0915,  # too-many-statements
+    R0917,  # too-many-positional-arguments, false positive, GIMP function signature
+    W0718,  # braod-exception-caught, ignore
+    W0719,  # broad-exception-raised, ignore
+    E0401,  # import-error, false positive, cannot run on gimp env
+    E0611   # no-name-in-module, false positive, cannot run on gimp env

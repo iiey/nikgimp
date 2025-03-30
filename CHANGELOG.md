@@ -1,5 +1,12 @@
 # VERSIONS
 
+## `v3.0.4` (2025-03-30)
+### Changed:
+- Improve code quality
+
+### Fixed:
+- Don't display warning message when cancelling hdr filter program
+
 ## `v3.0.3` (2025-03-30)
 ### Changed:
 - Enhance installation path detection
