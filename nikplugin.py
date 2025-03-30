@@ -2,9 +2,7 @@
 
 """
 VERSION:
-3.0.1 Create program list dynamically
-3.0.0 Make plugin compatible with Gimp 3.x
-previous versions: see gimp2x/shellout.py
+See CHANGELOG for details
 
 LICENSE:
 This program is distributed in the hope that it will be useful,
@@ -43,8 +41,10 @@ import sys
 import tempfile
 import traceback
 
-# NOTE: Update this base path to match your installation
-NIK_BASE_PATH = "C:/Program Files/Google/Nik Collection"
+# NOTE: Specify IF your installation is not in the default location
+# e.g. D:/plugins/nikcollection
+NIK_BASE_PATH: str = ""
+
 
 # Define plug-in metadata
 PROC_NAME = "NikCollection"
@@ -52,8 +52,41 @@ HELP = "Call an external program"
 DOC = "Call an external program passing the active layer as a temp file"
 AUTHOR = "nemo"
 COPYRIGHT = "GNU General Public License v3"
-DATE = "2025-03-25"
-VERSION = "3.0.2"
+DATE = "2025-03-30"
+VERSION = "3.0.3"
+
+
+def find_nik_installation() -> Path:
+    """Detect Nik Collection installation path based on operating system"""
+
+    possible_paths = []
+    # Common installation paths
+    if sys.platform == "win32":
+        possible_paths = [
+            Path("C:/Program Files/Google"),
+            Path("C:/Program Files (x86)/Google"),
+            Path("C:/Program Files/DxO"),
+        ]
+    elif sys.platform.startswith("linux"):
+        possible_paths = [
+            Path.home() / f".wine/drive_c/Program Files/Google",
+        ]
+
+    possible_paths = [p / "Nik Collection" for p in possible_paths]
+    for path in possible_paths:
+        if path.is_dir():
+            return path
+
+    # Fallback to user-configured path if specified
+    if NIK_BASE_PATH and (nik_path := Path(NIK_BASE_PATH)).is_dir():
+        return nik_path
+
+    show_alert(
+        text=f"{PROC_NAME} installtion path not found",
+        message="Please specify the correct installation path 'NIK_BASE_PATH' in the script.",
+    )
+
+    return Path("")
 
 
 def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path]]:
@@ -74,7 +107,7 @@ def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path]]:
             return None
 
     progs_lst = []
-    base_path = Path(NIK_BASE_PATH)
+    base_path = find_nik_installation()
     if base_path.is_dir():
         sub_dirs = [d for d in base_path.iterdir() if d.is_dir()]
         for prog_dir in sub_dirs:
@@ -159,7 +192,8 @@ def run_nik(prog_idx: int, gimp_img: Gimp.Image) -> Optional[str]:
     time_before = os.path.getmtime(img_path)
     Gimp.progress_init(f"Calling {prog_name}...")
     Gimp.progress_pulse()
-    cmd = [str(prog_filepath), img_path]
+    cmd_wine = ["wine"] if sys.platform.startswith("linux") else []
+    cmd = cmd_wine + [str(prog_filepath), img_path]
     subprocess.check_call(cmd)
 
     # Move output file to the desinged location so gimp can pick it up
