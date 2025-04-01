@@ -11,7 +11,8 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 This program is licensed under the GNU General Public License v3 (GPLv3).
 
 CONTRIBUTING:
-For updates, raising issues and contributing, visit <https://github.com/iiey/nikGimp>.
+For bug fixes & updates: https://iiey.github.io/nikgimp
+Issues and contributing: https://github.com/iiey/nikgimp
 """
 
 import gi
@@ -54,10 +55,10 @@ DOC = "Call an external program passing the active layer as a temp file"
 AUTHOR = "nemo"
 COPYRIGHT = "GNU General Public License v3"
 DATE = "2025-04-01"
-VERSION = "3.1.0-rc"
+VERSION = "3.1.0"
 
 
-def find_nik_installation() -> Path:
+def find_nik_install() -> Path:
     """Detect Nik Collection installation path based on operating system"""
 
     possible_paths = []
@@ -88,11 +89,27 @@ def find_nik_installation() -> Path:
         return nik_path
 
     show_alert(
-        text=f"{PROC_NAME} installtion path not found",
+        text=f"{PROC_NAME} installation path not found",
         message="Please specify the correct installation path 'NIK_BASE_PATH' in the script.",
     )
 
     return Path("")
+
+
+def get_prog_details(prog_dir: Path) -> Optional[Tuple[str, Path]]:
+    """Return pair (prog_name, exec_path) from the given directory"""
+
+    bit64_dirs = [
+        d for d in prog_dir.iterdir() if d.is_dir() and "64-bit" in d.name.lower()
+    ]
+    # prefer 64-bit version then fall back to default binary
+    if bit64_dirs:
+        exec_file = next(bit64_dirs[0].glob("*.exe"), None)
+    if exec_file is None:
+        exec_file = next(prog_dir.glob("*.exe"), None)
+    if exec_file:
+        return prog_dir.name, exec_file
+    return None
 
 
 def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path]]:
@@ -105,37 +122,22 @@ def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path]]:
         Otherwise, returns [prog_name, prog_filepath] for the specified program
     """
 
-    def get_exec(prog_dir: Path) -> Optional[Path]:
-        """Check for executable in the given directory"""
-        if executables := list(prog_dir.glob("*.exe")):
-            return executables[0]
-        return None
+    if not (base_path := find_nik_install()).is_dir():
+        return []
 
     progs_lst = []
-    base_path = find_nik_installation()
-    if base_path.is_dir():
-        # on mac, programs located directly under installation folder
-        if sys.platform == "darwin":
-            for prog_item in base_path.iterdir():
-                if prog_item.is_dir() and prog_item.suffix == ".app":
-                    progs_lst.append((prog_item.stem, prog_item))
-        else:
-            sub_dirs = [d for d in base_path.iterdir() if d.is_dir()]
-            for prog_dir in sub_dirs:
-                # prefer looking for 64-bit first
-                bit64_dirs = [
-                    d
-                    for d in prog_dir.iterdir()
-                    if d.is_dir() and "64-bit" in d.name.lower()
-                ]
-                exec_file = get_exec(bit64_dirs[0]) if bit64_dirs else None
-                # fallback to default version if not found
-                if exec_file is None:
-                    exec_file = get_exec(prog_dir)
-                # only append to final list if one is found
-                if exec_file:
-                    prog_detail = (prog_dir.name, exec_file)
-                    progs_lst.append(prog_detail)
+    # on mac, programs located directly under installation folder
+    if sys.platform == "darwin":
+        for prog_item in base_path.iterdir():
+            if prog_item.is_dir() and prog_item.suffix == ".app":
+                progs_lst.append((prog_item.stem, prog_item))
+    # on win or linx+wine
+    else:
+        sub_dirs = [d for d in base_path.iterdir() if d.is_dir()]
+        for prog_dir in sub_dirs:
+            if prog_detail := get_prog_details(prog_dir):
+                progs_lst.append(prog_detail)
+
     progs_lst.sort(key=lambda x: x[0].lower())  # sort alphabetically
 
     if idx is None:
