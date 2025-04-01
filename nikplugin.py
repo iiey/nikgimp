@@ -52,8 +52,8 @@ HELP = "Call an external program"
 DOC = "Call an external program passing the active layer as a temp file"
 AUTHOR = "nemo"
 COPYRIGHT = "GNU General Public License v3"
-DATE = "2025-03-30"
-VERSION = "3.0.4"
+DATE = "2025-04-01"
+VERSION = "3.0.5"
 
 
 def find_nik_installation() -> Path:
@@ -294,7 +294,7 @@ def plugin_main(
             Gimp.Selection.none(image)
 
         # Prepare the layer to be processed
-        active_layer: Gimp.Layer = image.get_layers()[0]
+        active_layer: Gimp.Layer = image.get_selected_layers()[0]
         if visible == LayerSource.CURRENT_LAYER:
             target_layer = active_layer
         else:
