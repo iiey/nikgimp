@@ -3,6 +3,10 @@ To download certain `nikplugin.py` version
 - Click on the version number to go to the file with this specific version
 - Click on "Download raw file" icon
 
+## [v3.0.5][v3_0_5] (2025-04-01)
+### Fixed:
+- Select active layer correctly for filter program
+
 ## [v3.0.4][v3_0_4] (2025-03-30)
 ### Changed:
 - Improve code quality
@@ -32,6 +36,7 @@ To download certain `nikplugin.py` version
 
 
 <!--link references-->
+[v3_0_5]: https://github.com/iiey/nikGimp/blob/fc08eb629818ebca6327a6ee567782f4a64e78dd/nikplugin.py
 [v3_0_4]: https://github.com/iiey/nikGimp/blob/28253bc5b44290465438126503f5e5c563f14245/nikplugin.py
 [v3_0_3]: https://github.com/iiey/nikGimp/blob/4c0f2d9a803c5183518ac92597087b37638a1ff9/nikplugin.py
 [v3_0_2]: https://github.com/iiey/nikGimp/blob/079819d23b0f3f525a83fa376a8e44d2faa2ab0e/nikplugin.py
