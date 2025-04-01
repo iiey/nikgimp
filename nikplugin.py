@@ -41,6 +41,7 @@ import sys
 import tempfile
 import traceback
 
+
 # NOTE: Specify IF your installation is not in the default location
 # e.g. D:/plugins/nikcollection
 NIK_BASE_PATH: str = ""
@@ -53,7 +54,7 @@ DOC = "Call an external program passing the active layer as a temp file"
 AUTHOR = "nemo"
 COPYRIGHT = "GNU General Public License v3"
 DATE = "2025-04-01"
-VERSION = "3.0.5"
+VERSION = "3.1.0-rc"
 
 
 def find_nik_installation() -> Path:
@@ -191,41 +192,66 @@ def find_hdr_output(prog: str, input_path: Path) -> Optional[Path]:
     return None
 
 
-def run_nik(prog_idx: int, gimp_img: Gimp.Image) -> Optional[str]:
+def run_nik(prog_idx: int, images: List[Gimp.Image]) -> Optional[str]:
     """Invoke external Nik program"""
 
     prog_name, prog_filepath = list_progs(prog_idx)
-    img_path = os.path.join(tempfile.gettempdir(), "tmpNik.jpg")
+    is_hdr = "hdr efex pro 2" in prog_name.lower()
+    # all other programs work with one input i.e. always idx=0 and saves the result to the same file
+    # except hdr program could accept multiple input images
+    temp_files: List[str] = []
 
-    # Save gimp image to disk
-    Gimp.progress_init("Saving a copy")
-    Gimp.file_save(
-        run_mode=Gimp.RunMode.NONINTERACTIVE,
-        image=gimp_img,
-        file=Gio.File.new_for_path(img_path),
-        options=None,
-    )
+    try:
+        # Save all temporary images to disk
+        for i, img in enumerate(images):
+            temp_path = os.path.join(tempfile.gettempdir(), f"tmpNik_{i}.jpg")
+            temp_files.append(temp_path)
 
-    # Invoke external command
-    time_before = os.path.getmtime(img_path)
-    Gimp.progress_init(f"Calling {prog_name}...")
-    Gimp.progress_pulse()
-    if sys.platform == "darwin":
-        prog_caller = ["open", "-a"]
-    elif sys.platform == "linux":
-        prog_caller = ["wine"]
-    else:
-        prog_caller = []
-    cmd = prog_caller + [str(prog_filepath), img_path]
-    subprocess.check_call(cmd)
+            Gimp.progress_init(f"Saving image {i+1}/{len(images)}")
+            Gimp.file_save(
+                run_mode=Gimp.RunMode.NONINTERACTIVE,
+                image=img,
+                file=Gio.File.new_for_path(temp_path),
+                options=None,
+            )
 
-    # Move output file to the desinged location so gimp can pick it up
-    if hdr_path := find_hdr_output(prog_name, Path(img_path)):
-        shutil.move(hdr_path, img_path)
+        # Track modification time of first file to detect changes
+        time_before = os.path.getmtime(temp_files[0])
 
-    time_after = os.path.getmtime(img_path)
+        # Run the external program
+        if sys.platform == "darwin":
+            prog_caller = ["open", "-a"]
+        elif sys.platform == "linux":
+            prog_caller = ["wine"]
+        else:  # windows
+            prog_caller = []
+        cmd = prog_caller + [str(prog_filepath)] + temp_files
+        Gimp.progress_init(f"Calling {prog_name}...")
+        Gimp.progress_pulse()
+        subprocess.check_call(cmd)
 
-    return None if time_before == time_after else img_path
+        # location of the processed image
+        result_path = temp_files[0]
+
+        # handle troublesome hdr program
+        # it cannot save image correctly, so find & move its output to the designed location
+        hdr_path = find_hdr_output(prog_name, Path(temp_files[0]))
+        if is_hdr and hdr_path:
+            shutil.move(hdr_path, result_path)
+
+        # Check if the file was modified
+        time_after = os.path.getmtime(result_path)
+        return None if time_before == time_after else result_path
+
+    finally:
+        # Clean up temporary files except the first one (potential result)
+        for i, temp_file in enumerate(temp_files):
+            try:
+                # Don't delete first file yet since it might be the result
+                if i > 0 and os.path.exists(temp_file):
+                    os.remove(temp_file)
+            except Exception:
+                pass  # Ignore errors in cleanup
 
 
 def show_alert(text: str, message: str, parent=None) -> None:
@@ -284,6 +310,8 @@ def plugin_main(
         # Get parameters
         visible = config.get_property("visible")
         prog_idx = int(config.get_property("command"))
+        prog_name = list_progs(prog_idx)[0]
+        is_hdr = "hdr efex pro" in prog_name.lower()
 
         # Start an undo group
         Gimp.context_push()
@@ -293,63 +321,77 @@ def plugin_main(
         if not Gimp.Selection.is_empty(image):
             Gimp.Selection.none(image)
 
-        # Prepare the layer to be processed
-        active_layer: Gimp.Layer = image.get_selected_layers()[0]
+        selected_layers: List[Gimp.Layer] = image.get_selected_layers()
+        target_layer: Gimp.Layer
         if visible == LayerSource.CURRENT_LAYER:
-            target_layer = active_layer
+            target_layer = selected_layers[0]
+            selected_layers = [target_layer]
         else:
-            # prepare a new layer in 'image' from all the visibles
-            prog_name: str = list_progs(prog_idx)[0]
+            # Prepare a new layer in 'image' from all the visibles
             target_layer = Gimp.Layer.new_from_visible(image, image, prog_name)
             image.insert_layer(target_layer, None, 0)
+            if not is_hdr:
+                selected_layers = [target_layer]
 
-        # Intermediate storage enables exporting content to image then save to disk
-        buffer: str = Gimp.edit_named_copy([target_layer], "ShellOutTemp")
-        tmp_img: Gimp.Image = Gimp.edit_named_paste_as_new_image(buffer)
-        if not tmp_img:
-            raise Exception("Failed to create temporary image from buffer")
-
-        Gimp.Image.undo_disable(tmp_img)
+        # Create temporary images from the source layer(s)
+        tmp_images: List[Gimp.Image] = []
+        for layer in selected_layers:
+            buffer = Gimp.edit_named_copy([layer], f"ShellOutTemp")
+            tmp_img = Gimp.edit_named_paste_as_new_image(buffer)
+            if not tmp_img:
+                raise Exception(f"Failed creating tmp image from: {layer.get_name()}")
+            Gimp.Image.undo_disable(tmp_img)
+            tmp_images.append(tmp_img)
 
         # Execute external program
-        tmp_filepath = run_nik(prog_idx, tmp_img)
+        tmp_filepath = run_nik(prog_idx, tmp_images)
+
+        # If no changes detected, clean up and return
         if tmp_filepath is None:
+            # Clean up temporary resources
+            Gimp.buffer_delete(buffer)
+            for tmp_img in tmp_images:
+                tmp_img.delete()
+
+            # Remove the target layer if it was newly created and not modified
             if visible == LayerSource.FROM_VISIBLES:
                 image.remove_layer(target_layer)
 
-            tmp_img.delete()
             return procedure.new_return_values(
                 Gimp.PDBStatusType.SUCCESS,
                 GLib.Error(message="No changes detected"),
             )
 
-        # Put it as a new layer in the opened image
+        # Integrate image back into gimp
+        # 1. Load image file as layer into tmp image
+        tmp_img = tmp_images[0]
         filtered: Gimp.Layer = Gimp.file_load_layer(
             run_mode=Gimp.RunMode.NONINTERACTIVE,
             image=tmp_img,
             file=Gio.File.new_for_path(tmp_filepath),
         )
+        # 2. the returned layer needs to be added to the image
+        tmp_img.insert_layer(filtered, None, 0)
 
-        tmp_img.insert_layer(filtered, None, -1)
-        buffer: str = Gimp.edit_named_copy([filtered], "ShellOutTemp")
+        buffer = Gimp.edit_named_copy([filtered], "ShellOutTemp")
 
         # Align size and position
-        target = active_layer if visible == LayerSource.CURRENT_LAYER else target_layer
-        target.resize(filtered.get_width(), filtered.get_height(), 0, 0)
-        sel = Gimp.edit_named_paste(target, buffer, True)
+        target_layer.resize(filtered.get_width(), filtered.get_height(), 0, 0)
+        sel = Gimp.edit_named_paste(target_layer, buffer, True)
         Gimp.Item.transform_translate(
-            target,
+            target_layer,
             (tmp_img.get_width() - filtered.get_width()) / 2,
             (tmp_img.get_height() - filtered.get_height()) / 2,
         )
 
-        target.edit_clear()
+        target_layer.edit_clear()
         Gimp.buffer_delete(buffer)
         Gimp.floating_sel_anchor(sel)
 
-        # Cleanup temporary file & image
+        # Clean up temporary resources
         os.remove(tmp_filepath)
-        tmp_img.delete()
+        for tmp_img in tmp_images:
+            tmp_img.delete()
 
         return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
     except Exception as error:
