@@ -179,10 +179,15 @@ def find_hdr_output(prog: str, input_path: Path) -> Optional[Path]:
 
     if not doc_paths:
         show_alert(
-            text=f"{prog} output '{fname}' not found",
-            message="Plugin cannot identify 'Documents' path on your system.",
+            text=f"{prog}: Folder not found",
+            message="Plugin cannot identify 'Documents' on your system.",
         )
+        return None
 
+    show_alert(
+        text=f"{prog}: File not found",
+        message=f"Plugin cannot find the output {fname} in 'Documents'.",
+    )
     return None
 
 
