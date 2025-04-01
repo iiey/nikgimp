@@ -1,0 +1,58 @@
+name: Bug Report - Fill in Form
+description: Create bug create using form template to fill in
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin Version
+      description: Which version of nikGimp plugin are you using? (can be found under the line "VERSION = x.y.z" in the script)
+      placeholder: e.g., 3.1.0
+    validations:
+      required: true
+  - type: input
+    id: gimp-version
+    attributes:
+      label: GIMP Version
+      description: Which version of GIMP are you using?
+      placeholder: e.g., GIMP 3.0.4
+    validations:
+      required: true
+  - type: dropdown
+    id: nik-version
+    attributes:
+      label: Nik Collection Version
+      description: Which version of Nik Collection are you using?
+      options:
+        - Google Nik Collection v1.2.11 (Supported)
+        - Other (Please specify in description)
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: Operating System Version
+      description: Which operating system are you using?
+      placeholder: e.g., Windows 11, macOS Ventura, Ubuntu 24.04 LTS
+    validations:
+      required: true
+  - type: dropdown
+    id: plugin-modified
+    attributes:
+      label: Was the plugin `nikplugin.py` used without modification?
+      description: Please confirm if you used the original script without any changes
+      options:
+        - "Yes"
+        - "No (Please specify the changes made in description)"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Provide steps to reproduce the issue, describe the bug and what's expected to happen.
+      placeholder: Please tell what you see when using the plugin!
+      value: "A bug happened while using nikgimp!"
+    validations:
+      required: true
