@@ -16,16 +16,17 @@ which contains both Win & Mac installation.
 ## Installation
 
 1. Create a folder named `nikplugin/` under the *plug-ins folder of your GIMP installation*
-2. Copy `nikplugin.py` into the folder and ensure that the script is *executable*
+2. Copy [nikplugin.py](nikplugin.py) into the folder and ensure that the script is *executable*
     ```sh
     GIMP_INSTALLATION_PATH/lib/gimp/3.0/plug-ins/nikplugin/nikplugin.py
     ```
 3. (Re)start GIMP, the plugin should appear under the menu `Filters > NikCollection`
 
+**Note**: For details see [Wiki - Installation](https://github.com/iiey/nikgimp/wiki/install)<br>
 **Note**: see also [Troubleshooting](#custom-installation-path) if Nik is installed in a non-default location.
 
 ### Update
-- Replace the script `nikplugin.py` with the latest version in this repository and restart GIMP
+- Replace the script with the [latest version][releases] `nikplugin.py` in this repository and restart GIMP
 
 ### Uninstall
 - Remove the folder `nikplugin/` from your `plugin-ins` directory
@@ -41,12 +42,14 @@ The plugin sends the current image to the selected Nik Collection program, and a
 This code revises the original `shellout.py` script to make it compatible with the API in GIMP `v3.x`.
 It maintains the same functionality but updates the implementation to work with the [GIMP Python API v3.0][api30].
 
-This plugin has the same license `GNU GPLv3` as the original [shellout.py](gimp2x/shellout.py) script it's based on.
+This plugin has the same license `GNU GPLv3` as the original [shellout.py][gimp2_shellout] script it's based on.
 
 
 # Troubleshooting
 
 ## Custom installation path
+
+<details>
 
 Specify path in the variable `NIK_BASE_PATH` of the script to match your machine configuration,
 If you have installed Nik Collection in a non-default location.<br>
@@ -54,6 +57,8 @@ Following paths are considered default:
 - Linux with Wine: `$HOME/.wine/drive_c/Program Files`
 - macOS: `/Application`
 - Win: `C:/Program Files`
+
+</details>
 
 ## Plugin doesn't show up in the menu
 
@@ -113,7 +118,7 @@ If error occurs, gimp reinstallation may resolve issue or file a report.
 
 </details>
 
-## "HDR Efex Pro 2" warning
+## *HDR Efex Pro 2* warning
 
 <details>
 
@@ -132,8 +137,10 @@ Therefore, you need to specify it manually if it is configured differently from 
 <!--references-->
 [api30]: https://developer.gimp.org/api/3.0
 [download_link]: https://www.techspot.com/downloads/6809-google-nik-collection.html
+[gimp2_shellout]: https://github.com/iiey/nikgimp/blob/main/gimp2x/shellout.py
 [gimp_forum]: https://www.gimp-forum.net/Forum-Gimp-2-99-Gimp-3-0
 [issue_report]: https://github.com/iiey/nikGimp/issues
 [loc_doc]: https://github.com/iiey/nikGimp/blob/29260dfe52e2e4afbd3f2bacf26f9fce0234369b/nikplugin.py#L154
 [loc_libs]: https://github.com/iiey/nikGimp/blob/9c1e5f927679043a5f9697b31e055647cbd3f3a2/nikplugin.py#L18-L32
+[releases]: https://github.com/iiey/nikgimp/blob/main/CHANGELOG.md
 [test_dialog]: https://gitlab.gnome.org/GNOME/gimp/-/blob/master/plug-ins/python/test-dialog.py
