@@ -192,6 +192,108 @@ def find_hdr_output(prog: str, input_path: Path) -> Optional[Path]:
     return None
 
 
+def show_alert(text: str, message: str, parent=None) -> None:
+    """Popup a message dialog with the given text and message"""
+
+    dialog = Gtk.MessageDialog(
+        transient_for=parent,
+        flags=0,
+        message_type=Gtk.MessageType.ERROR,
+        buttons=Gtk.ButtonsType.CLOSE,
+        text=text,
+    )
+    dialog.format_secondary_text(message)
+    dialog.set_title(f"{PROC_NAME} v{VERSION}")
+    dialog.run()
+    dialog.destroy()
+
+
+def prepare_data(
+    image: Gimp.Image,
+    visible: str,
+    prog_name: str,
+    is_hdr: bool,
+) -> Tuple[Gimp.Layer, List[Gimp.Image]]:
+    """Prepare target layer(s) and create tmp image filepath(s)
+    Returns:
+        target_layer: where the final result will be written to
+        tm_image(s): list of temporary images created from the selected layers
+    """
+
+    # Clear current selection to avoid wrongly pasting the processed image
+    if not Gimp.Selection.is_empty(image):
+        Gimp.Selection.none(image)
+
+    selected_layers: List[Gimp.Layer] = image.get_selected_layers()
+
+    # Determine target and source layers based on visibility setting
+    if visible == LayerSource.CURRENT_LAYER:
+        target_layer = selected_layers[0]
+        source_layers = [target_layer]
+    else:
+        # Prepare a new layer from all the visible layers
+        target_layer = Gimp.Layer.new_from_visible(image, image, prog_name)
+        image.insert_layer(target_layer, None, 0)
+        # For hdr program, we use all the user selected layers as inputs
+        source_layers = [target_layer] if not is_hdr else selected_layers
+
+    # Create temporary images from source layers
+    tmp_images: List[Gimp.Image] = []
+    for layer in source_layers:
+        buffer = Gimp.edit_named_copy([layer], "ShellOutTemp")
+        tmp_img = Gimp.edit_named_paste_as_new_image(buffer)
+        if not tmp_img:
+            raise RuntimeError(f"Failed creating tmp image from: {layer.get_name()}")
+        Gimp.Image.undo_disable(tmp_img)
+        tmp_images.append(tmp_img)
+
+    Gimp.buffer_delete(buffer)
+    return target_layer, tmp_images
+
+
+def process_result(
+    target_layer: Gimp.Layer,
+    tmp_img: Gimp.Image,
+    tmp_filepath: str,
+) -> None:
+    """Process the result image and integrate it back into GIMP"""
+
+    # Integrate image back into gimp
+    # 1. Load image file as layer into tmp image
+    filtered: Gimp.Layer = Gimp.file_load_layer(
+        run_mode=Gimp.RunMode.NONINTERACTIVE,
+        image=tmp_img,
+        file=Gio.File.new_for_path(tmp_filepath),
+    )
+    # 2. the returned layer needs to be added to the image
+    tmp_img.insert_layer(filtered, None, 0)
+
+    buffer = Gimp.edit_named_copy([filtered], "ShellOutTemp")
+
+    # Align size and position
+    target_layer.resize(filtered.get_width(), filtered.get_height(), 0, 0)
+    sel = Gimp.edit_named_paste(target_layer, buffer, True)
+    Gimp.Item.transform_translate(
+        target_layer,
+        (tmp_img.get_width() - filtered.get_width()) / 2,
+        (tmp_img.get_height() - filtered.get_height()) / 2,
+    )
+
+    target_layer.edit_clear()
+    Gimp.buffer_delete(buffer)
+    Gimp.floating_sel_anchor(sel)
+
+
+def cleanup(tmp_filepath: Optional[str], tmp_images: List[Gimp.Image]) -> None:
+    """Clean up temporary resources"""
+
+    if tmp_filepath and os.path.exists(tmp_filepath):
+        os.remove(tmp_filepath)
+
+    for tmp_img in tmp_images:
+        tmp_img.delete()
+
+
 def run_nik(prog_idx: int, images: List[Gimp.Image]) -> Optional[str]:
     """Invoke external Nik program"""
 
@@ -254,22 +356,6 @@ def run_nik(prog_idx: int, images: List[Gimp.Image]) -> Optional[str]:
                 pass  # Ignore errors in cleanup
 
 
-def show_alert(text: str, message: str, parent=None) -> None:
-    """Popup a message dialog with the given text and message"""
-
-    dialog = Gtk.MessageDialog(
-        transient_for=parent,
-        flags=0,
-        message_type=Gtk.MessageType.ERROR,
-        buttons=Gtk.ButtonsType.CLOSE,
-        text=text,
-    )
-    dialog.format_secondary_text(message)
-    dialog.set_title(f"{PROC_NAME} v{VERSION}")
-    dialog.run()
-    dialog.destroy()
-
-
 def plugin_main(
     procedure: Gimp.Procedure,
     run_mode: Gimp.RunMode,
@@ -278,19 +364,7 @@ def plugin_main(
     config: Gimp.ProcedureConfig,
     run_data: Any,  # pylint: disable=W0613
 ) -> Gimp.ValueArray:
-    """
-    Main function executed by the plugin.
-    Call an external Nik Collection program on the active layer
-    It supports two modes:
-      - When visible == 0, operates on the active drawable (current layer).
-      - When visible != 0, creates a new layer from the composite of all visible layers
-    Workflow:
-      - Start an undo group (let user undo all operations as a single step)
-      - Copy and save the layer to a temporary file based on the "visible" setting
-      - Call the chosen external Nik Collection program
-      - Load the modified result into 'image'
-      - End the undo group and finalize
-    """
+    """Main function executed by the plugin"""
 
     try:
         # Open dialog to get config parameters
@@ -308,50 +382,29 @@ def plugin_main(
             dialog.destroy()
 
         # Get parameters
-        visible = config.get_property("visible")
+        visible = str(config.get_property("visible"))
         prog_idx = int(config.get_property("command"))
-        prog_name = list_progs(prog_idx)[0]
-        is_hdr = "hdr efex pro" in prog_name.lower()
+        prog_name: str = list_progs(prog_idx)[0]
+        is_hdr: bool = "hdr efex pro" in prog_name.lower()
 
-        # Start an undo group
+        # Start an undo_group
         Gimp.context_push()
         image.undo_group_start()
 
-        # Clear current selection to avoid wrongly pasting the processed image
-        if not Gimp.Selection.is_empty(image):
-            Gimp.Selection.none(image)
-
-        selected_layers: List[Gimp.Layer] = image.get_selected_layers()
-        target_layer: Gimp.Layer
-        if visible == LayerSource.CURRENT_LAYER:
-            target_layer = selected_layers[0]
-            selected_layers = [target_layer]
-        else:
-            # Prepare a new layer in 'image' from all the visibles
-            target_layer = Gimp.Layer.new_from_visible(image, image, prog_name)
-            image.insert_layer(target_layer, None, 0)
-            if not is_hdr:
-                selected_layers = [target_layer]
-
-        # Create temporary images from the source layer(s)
-        tmp_images: List[Gimp.Image] = []
-        for layer in selected_layers:
-            buffer = Gimp.edit_named_copy([layer], f"ShellOutTemp")
-            tmp_img = Gimp.edit_named_paste_as_new_image(buffer)
-            if not tmp_img:
-                raise Exception(f"Failed creating tmp image from: {layer.get_name()}")
-            Gimp.Image.undo_disable(tmp_img)
-            tmp_images.append(tmp_img)
+        # Prepare layers and create temporary images
+        target_layer, tmp_images = prepare_data(
+            image,
+            visible,
+            prog_name,
+            is_hdr,
+        )
 
         # Execute external program
         tmp_filepath = run_nik(prog_idx, tmp_images)
 
         # If no changes detected, clean up and return
         if tmp_filepath is None:
-            # Clean up temporary resources
-            Gimp.buffer_delete(buffer)
-            for tmp_img in tmp_images:
-                tmp_img.delete()
+            cleanup(None, tmp_images)
 
             # Remove the target layer if it was newly created and not modified
             if visible == LayerSource.FROM_VISIBLES:
@@ -362,38 +415,11 @@ def plugin_main(
                 GLib.Error(message="No changes detected"),
             )
 
-        # Integrate image back into gimp
-        # 1. Load image file as layer into tmp image
-        tmp_img = tmp_images[0]
-        filtered: Gimp.Layer = Gimp.file_load_layer(
-            run_mode=Gimp.RunMode.NONINTERACTIVE,
-            image=tmp_img,
-            file=Gio.File.new_for_path(tmp_filepath),
-        )
-        # 2. the returned layer needs to be added to the image
-        tmp_img.insert_layer(filtered, None, 0)
-
-        buffer = Gimp.edit_named_copy([filtered], "ShellOutTemp")
-
-        # Align size and position
-        target_layer.resize(filtered.get_width(), filtered.get_height(), 0, 0)
-        sel = Gimp.edit_named_paste(target_layer, buffer, True)
-        Gimp.Item.transform_translate(
-            target_layer,
-            (tmp_img.get_width() - filtered.get_width()) / 2,
-            (tmp_img.get_height() - filtered.get_height()) / 2,
-        )
-
-        target_layer.edit_clear()
-        Gimp.buffer_delete(buffer)
-        Gimp.floating_sel_anchor(sel)
-
-        # Clean up temporary resources
-        os.remove(tmp_filepath)
-        for tmp_img in tmp_images:
-            tmp_img.delete()
-
+        # load the nik result from file into gimp
+        process_result(target_layer, tmp_images[0], tmp_filepath)
+        cleanup(tmp_filepath, tmp_images)
         return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
     except Exception as error:
         show_alert(text=str(error), message=traceback.format_exc())
         return procedure.new_return_values(
