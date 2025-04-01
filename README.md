@@ -1,4 +1,6 @@
-# nikGimp
+[![ci](https://github.com/iiey/nikgimp/actions/workflows/linting.yml/badge.svg?branch=main)](https://github.com/iiey/nikgimp/actions/workflows/linting.yml)
+
+# nikgimp
 
 A Python GIMP plugin for processing images using **external** Nik Collection programs.
 
