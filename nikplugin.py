@@ -33,7 +33,7 @@ from gi.repository import (
 
 from enum import Enum
 from pathlib import Path
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Callable, List, Optional, Tuple, Union
 
 import os
 import shutil
@@ -55,10 +55,23 @@ DOC = "Call an external program passing the active layer as a temp file"
 AUTHOR = "nemo"
 COPYRIGHT = "GNU General Public License v3"
 DATE = "2025-04-01"
-VERSION = "3.1.0"
+VERSION = "3.2.0"
 
 
-def find_nik_install() -> Path:
+def check_dxo(func: Callable[..., Optional[Path]]) -> Callable[..., Optional[Path]]:
+    """Append '/bin' in case of DxO"""
+
+    def wrapper(*args: Any, **kwargs: Any) -> Optional[Path]:
+        path = func(*args, **kwargs)
+        if path and "dxo" in path.name.lower():
+            return path / "bin"
+        return path
+
+    return wrapper
+
+
+@check_dxo
+def find_nik_install() -> Optional[Path]:
     """Detect Nik Collection installation path based on operating system"""
 
     possible_paths = []
@@ -93,23 +106,66 @@ def find_nik_install() -> Path:
         message="Please specify the correct installation path 'NIK_BASE_PATH' in the script.",
     )
 
-    return Path("")
-
-
-def get_prog_details(prog_dir: Path) -> Optional[Tuple[str, Path]]:
-    """Return pair (prog_name, exec_path) from the given directory"""
-
-    bit64_dirs = [
-        d for d in prog_dir.iterdir() if d.is_dir() and "64-bit" in d.name.lower()
-    ]
-    # prefer 64-bit version then fall back to default binary
-    if bit64_dirs:
-        exec_file = next(bit64_dirs[0].glob("*.exe"), None)
-    if exec_file is None:
-        exec_file = next(prog_dir.glob("*.exe"), None)
-    if exec_file:
-        return prog_dir.name, exec_file
     return None
+
+
+def list_mac_progs(base_path: Path) -> List[Tuple[str, Path]]:
+    """Function for both Google & DxO version (under macOS)
+    i.e.: /Applications/Nik Collection/program_name.app
+    """
+
+    mac_progs: List[Tuple[str, Path]] = []
+    for prog_item in base_path.iterdir():
+        if prog_item.is_dir() and prog_item.suffix == ".app":
+            mac_progs.append((prog_item.stem, prog_item))
+    return mac_progs
+
+
+def list_dxo_progs(base_path: Path) -> List[Tuple[str, Path]]:
+    """Function for DxO version (under windows)
+    i.e.: ../DxO/Nik Collection/bin/program_name.exe
+    """
+
+    if "bin" not in base_path.name:
+        return []
+
+    dxo_progs: List[Tuple[str, Path]] = []
+    for prog_item in base_path.iterdir():
+        if prog_item.is_file() and prog_item.suffix == ".exe":
+            dxo_progs.append((prog_item.stem, prog_item))
+    return dxo_progs
+
+
+def list_google_progs(base_path: Path) -> List[Tuple[str, Path]]:
+    """
+    Function for Google version (under windows)
+    There could be 64-bit folder (favoured) in program folder under `base_path`
+    Returns:
+        List of (prog_name, exec_path)
+    """
+
+    def get_prog_details(prog_dir: Path) -> Optional[Tuple[str, Path]]:
+        exec_file = None
+        bit64_dirs = [
+            d for d in prog_dir.iterdir() if d.is_dir() and "64-bit" in d.name.lower()
+        ]
+        # prefer 64-bit version
+        if bit64_dirs:
+            exec_file = next(bit64_dirs[0].glob("*.exe"), None)
+        # fallback default binary
+        if exec_file is None:
+            exec_file = next(prog_dir.glob("*.exe"), None)
+        # return one of above
+        return (prog_dir.name, exec_file) if exec_file else None
+
+    progs: List[Tuple[str, Path]] = []
+    sub_dirs = [d for d in base_path.iterdir() if d.is_dir()]
+
+    for prog_dir in sub_dirs:
+        if prog_detail := get_prog_details(prog_dir):
+            progs.append(prog_detail)
+
+    return progs
 
 
 def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path]]:
@@ -122,21 +178,17 @@ def list_progs(idx: Optional[int] = None) -> Union[List[str], Tuple[str, Path]]:
         Otherwise, returns [prog_name, prog_filepath] for the specified program
     """
 
-    if not (base_path := find_nik_install()).is_dir():
+    if not (base_path := find_nik_install()):
         return []
 
-    progs_lst = []
+    progs_lst: List[Tuple[str, Path]] = []
     # on mac, programs located directly under installation folder
     if sys.platform == "darwin":
-        for prog_item in base_path.iterdir():
-            if prog_item.is_dir() and prog_item.suffix == ".app":
-                progs_lst.append((prog_item.stem, prog_item))
+        progs_lst.extend(list_mac_progs(base_path))
     # on win or linx+wine
     else:
-        sub_dirs = [d for d in base_path.iterdir() if d.is_dir()]
-        for prog_dir in sub_dirs:
-            if prog_detail := get_prog_details(prog_dir):
-                progs_lst.append(prog_detail)
+        progs_lst.extend(list_dxo_progs(base_path))
+        progs_lst.extend(list_google_progs(base_path))
 
     progs_lst.sort(key=lambda x: x[0].lower())  # sort alphabetically
 
