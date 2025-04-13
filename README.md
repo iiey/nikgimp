@@ -18,14 +18,14 @@ which contains both Win & Mac installation.
 ## Installation
 
 1. Create a folder named `nikplugin/` under the *plug-ins folder of your GIMP installation*
-2. Copy [nikplugin.py](nikplugin.py) (latest) into the folder and ensure that the script is *executable*
+2. Copy [nikplugin.py](nikplugin.py) (latest) into the folder, e.g. under windows:
     ```sh
     GIMP_INSTALLATION_PATH/lib/gimp/3.0/plug-ins/nikplugin/nikplugin.py
     ```
 3. (Re)start GIMP, the plugin should appear under the menu `Filters > NikCollection`
 
 **Note**: For details see [Wiki - Installation][wiki_install]<br>
-**Note**: see also [TROUBLESHOOTING][troubles] if Nik is installed in a *non-default location*.
+**Note**: See also [TROUBLESHOOTING][troubles] if encountering any issue or using a *non-default location* for Nik installation.
 
 ### Update
 - Replace the script with the latest version or [stable releases][releases] `nikplugin.py` in this repository and restart GIMP

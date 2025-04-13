@@ -23,7 +23,15 @@ In most case a new reinstallation of [latest GIMP3 version](https://www.gimp.org
 After all, you could find posts, ask [gimp-forum.net][gimp_forum] or file an [issue report][issue_report]
 with details.
 
-### 1. Verify GIMP installation
+### 1. Check `plugin-ins` location
+
+In GIMP, go to `Edit > Preferences > Folders > Plug-ins`, ensure that we placed plugin folder in one of the listed directories there. This may differ between machine-wide and user installations.
+
+### 2. Script folder
+In GIMP3, the plugin script must be placed in a plugin folder with the same name as the script under `plugin-ins` location.<br>
+I.e.: `<PLUGIN_LOCATION>/nikplugin/nikplugin.py` and not `<PLUGIN_LOCATION>/nikplugin.py`.
+
+### 3. Verify GIMP installation
 
 Ensure GIMP3 is properly installed with Python support:
 
@@ -32,11 +40,12 @@ Ensure GIMP3 is properly installed with Python support:
 3. If the `Test dialog...` plugin isn't there either, then is not an issue with this plugin
 but general GIMP problem, a reinstallation may help.
 
-### 2. Check plugin location
+### 4. Check file & permissions
 
-In GIMP, go to `Edit > Preferences > Folders > Plug-ins`, ensure that we placed plugin folder in one of the listed directories there. This may differ between machine-wide and user installations.
+- Ensure you downloaded the latest version of the plugin and the *file content is intact*, as Python is sensitive to indentation.
+- Under Unix-like (linux & mac), the downloaded script must have *executable* permission: `chmod +x nikplugin.py`
 
-### 3. Test Python module availability
+### 5. Test Python module availability
 
 1. Open `GIMP > Filters > Development > Python-Fu > Python Console`
 2. Input [these imports][loc_libs] into the interpreter and press `Enter`:
@@ -56,12 +65,7 @@ from gi.repository import Gtk
 
 Any error indicates that the necessary Python module is missing and it's a GIMP issue that reinstallation may help.
 
-### 4. Check file & permissions
-
-- Ensure you downloaded the latest version of the plugin and the *file content is intact*, as Python is sensitive to indentation.
-- Under Unix-like, the script must has *executable* permission: `chmod +x nikplugin.py`
-
-### 5. Check for error messages
+### 6. Check for error messages
 
 Run GIMP console in verbose mode from command-line:
 ```
