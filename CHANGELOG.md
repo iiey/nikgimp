@@ -3,6 +3,10 @@ To download certain `nikplugin.py` version
 - Click on the version number to go to the file with this specific version
 - Click on "Download raw file" icon
 
+## [v3.2.0][v3_2_0] (2025-04-10)
+### Added:
+- Support finding DxO installation path (experimental)
+
 ## [v3.1.0][v3_1_0] (2025-04-01)
 ### Added:
 - Handle multi-layer inputs for *hdr efex pro 2*
@@ -43,6 +47,7 @@ To download certain `nikplugin.py` version
 
 
 <!--link references-->
+[v3_2_0]: https://github.com/iiey/nikGimp/blob/a203dbae0ae76965dc8a785205009be895065a5b/nikplugin.py
 [v3_1_0]: https://github.com/iiey/nikGimp/blob/9c53fa1bc5a0920b0cdcc2a2f63918150b74d520/nikplugin.py
 [v3_0_5]: https://github.com/iiey/nikGimp/blob/fc08eb629818ebca6327a6ee567782f4a64e78dd/nikplugin.py
 [v3_0_4]: https://github.com/iiey/nikGimp/blob/28253bc5b44290465438126503f5e5c563f14245/nikplugin.py
