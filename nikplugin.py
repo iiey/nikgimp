@@ -55,22 +55,9 @@ DOC = "Call an external program passing the active layer as a temp file"
 AUTHOR = "nemo"
 COPYRIGHT = "GNU General Public License v3"
 DATE = "2025-04-01"
-VERSION = "3.2.0"
+VERSION = "3.2.1"
 
 
-def check_dxo(func: Callable[..., Optional[Path]]) -> Callable[..., Optional[Path]]:
-    """Append '/bin' in case of DxO"""
-
-    def wrapper(*args: Any, **kwargs: Any) -> Optional[Path]:
-        path = func(*args, **kwargs)
-        if path and "dxo" in path.name.lower():
-            return path / "bin"
-        return path
-
-    return wrapper
-
-
-@check_dxo
 def find_nik_install() -> Optional[Path]:
     """Detect Nik Collection installation path based on operating system"""
 
@@ -78,9 +65,9 @@ def find_nik_install() -> Optional[Path]:
     # Common installation paths
     if sys.platform == "win32":
         possible_paths = [
+            Path("C:/Program Files/DxO"),
             Path("C:/Program Files/Google"),
             Path("C:/Program Files (x86)/Google"),
-            Path("C:/Program Files/DxO"),
         ]
     elif sys.platform == "darwin":
         possible_paths = [
@@ -92,10 +79,20 @@ def find_nik_install() -> Optional[Path]:
             Path.home() / ".wine/drive_c/Program Files/Google",
         ]
 
-    possible_paths = [p / "Nik Collection" for p in possible_paths]
-    for path in possible_paths:
-        if path.is_dir():
-            return path
+    # Search for all Nik Collection* folders under each base path
+    nik_folders = []
+    for base in possible_paths:
+        if base.is_dir():
+            nik_folders.extend(sorted(base.glob("Nik Collection*"), reverse=True))
+
+    for nik in nik_folders:
+        # DxO: check subfolder e.g. 'Nik Collection 8/bin'
+        if (nik_bin := nik / "bin").is_dir():
+            # stop at highest version (first in sorted list)
+            return nik_bin
+        # Google: check program subfolders (.app are folder in macOS too)
+        if any(d.is_dir() for d in nik.iterdir()):
+            return nik
 
     # Fallback to user-configured path if specified
     if NIK_BASE_PATH and (nik_path := Path(NIK_BASE_PATH)).is_dir():
@@ -103,7 +100,10 @@ def find_nik_install() -> Optional[Path]:
 
     show_alert(
         text=f"{PROC_NAME} installation path not found",
-        message="Please specify the correct installation path 'NIK_BASE_PATH' in the script.",
+        message=(
+            "Please specify the correct installation path in the script.\n"
+            f"{NIK_BASE_PATH=}"
+        ),
     )
 
     return None
