@@ -3,6 +3,10 @@ To download certain `nikplugin.py` version
 - Click on the version number to go to the file with this specific version
 - Click on "Download raw file" icon
 
+## [v3.2.1][v3_2_1] (2025-05-22)
+### Fixed:
+- DxO programs not found
+
 ## [v3.2.0][v3_2_0] (2025-04-10)
 ### Added:
 - Support finding DxO installation path (experimental)
@@ -47,6 +51,7 @@ To download certain `nikplugin.py` version
 
 
 <!--link references-->
+[v3_2_1]: https://github.com/iiey/nikGimp/blob/42fa5874b94b1a100fc2fb9e410114b51891c218/nikplugin.py
 [v3_2_0]: https://github.com/iiey/nikGimp/blob/a203dbae0ae76965dc8a785205009be895065a5b/nikplugin.py
 [v3_1_0]: https://github.com/iiey/nikGimp/blob/9c53fa1bc5a0920b0cdcc2a2f63918150b74d520/nikplugin.py
 [v3_0_5]: https://github.com/iiey/nikGimp/blob/fc08eb629818ebca6327a6ee567782f4a64e78dd/nikplugin.py
