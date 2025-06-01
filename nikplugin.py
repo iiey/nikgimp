@@ -55,7 +55,7 @@ DOC = "Call an external program passing the active layer as a temp file"
 AUTHOR = "nemo"
 COPYRIGHT = "GNU General Public License v3"
 DATE = "2025-04-01"
-VERSION = "3.2.1"
+VERSION = "3.2.2-rc1"
 
 
 def find_nik_install() -> Optional[Path]:
@@ -123,7 +123,7 @@ def list_mac_progs(base_path: Path) -> List[Tuple[str, Path]]:
 
 def list_dxo_progs(base_path: Path) -> List[Tuple[str, Path]]:
     """Function for DxO version (under windows)
-    i.e.: ../DxO/Nik Collection/bin/program_name.exe
+    i.e.: ../DxO/Nik Collection N/bin/program_name.exe
     """
 
     if "bin" not in base_path.name:
@@ -131,7 +131,11 @@ def list_dxo_progs(base_path: Path) -> List[Tuple[str, Path]]:
 
     dxo_progs: List[Tuple[str, Path]] = []
     for prog_item in base_path.iterdir():
-        if prog_item.is_file() and prog_item.suffix == ".exe":
+        if (
+            prog_item.is_file()
+            and "nik" in prog_item.name.lower()
+            and prog_item.suffix == ".exe"
+        ):
             dxo_progs.append((prog_item.stem, prog_item))
     return dxo_progs
 
