@@ -76,6 +76,7 @@ def find_nik_install() -> Optional[Path]:
         ]
     elif sys.platform.startswith("linux"):
         possible_paths = [
+            Path.home() / ".wine/drive_c/Program Files/DxO",
             Path.home() / ".wine/drive_c/Program Files/Google",
         ]
 
