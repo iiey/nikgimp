@@ -1,7 +1,13 @@
 # RELEASE NOTES
-To download certain `nikplugin.py` version
+To download certain version
 - Click on the version number to go to the file with this specific version
 - Click on "Download raw file" icon
+
+Or go to [releases](https://github.com/iiey/nikgimp/releases) > *Assets* > `nikplugin.py`
+
+## [v3.2.2][v3_2_2] (2025-06-01)
+### Changed:
+- Minor improvements for finding program & output
 
 ## [v3.2.1][v3_2_1] (2025-05-22)
 ### Fixed:
@@ -51,6 +57,7 @@ To download certain `nikplugin.py` version
 
 
 <!--link references-->
+[v3_2_2]: https://github.com/iiey/nikGimp/blob/9e9066b6dce2297ee8751561ab772328525e86fa/nikplugin.py
 [v3_2_1]: https://github.com/iiey/nikGimp/blob/42fa5874b94b1a100fc2fb9e410114b51891c218/nikplugin.py
 [v3_2_0]: https://github.com/iiey/nikGimp/blob/a203dbae0ae76965dc8a785205009be895065a5b/nikplugin.py
 [v3_1_0]: https://github.com/iiey/nikGimp/blob/9c53fa1bc5a0920b0cdcc2a2f63918150b74d520/nikplugin.py
