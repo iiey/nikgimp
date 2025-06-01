@@ -55,7 +55,7 @@ DOC = "Call an external program passing the active layer as a temp file"
 AUTHOR = "nemo"
 COPYRIGHT = "GNU General Public License v3"
 DATE = "2025-04-01"
-VERSION = "3.2.2-rc1"
+VERSION = "3.2.2"
 
 
 def find_nik_install() -> Optional[Path]:
@@ -222,9 +222,11 @@ def find_hdr_output(prog: str, input_path: Path) -> Optional[Path]:
             Path("D:/Documents"),
         ]
     if sys.platform == "darwin":
-        # NOTE: not work, absolute no idea where mac prog saves the output
+        # NOTE: extend to where intermediate files are stored
         candidate_paths = [
+            Path.home(),
             Path.home() / "Documents",
+            Path.home() / "Pictures",
         ]
     elif sys.platform.startswith("linux"):
         wine_user = os.environ.get("USER", os.environ.get("USERNAME", "user"))
